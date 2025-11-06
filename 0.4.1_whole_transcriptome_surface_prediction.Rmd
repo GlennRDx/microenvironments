@@ -1,0 +1,195 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+
+# Load Libraries
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+knitr::opts_knit$set(root.dir = "/home/glennrdx/Documents/lab_projects/microenvironments/01_data/")
+
+library(MASS)
+library(dplyr)
+library(data.table)
+library(Seurat)
+library(ggplot2)
+library(tidyverse)
+library(data.table)
+```
+
+# load pretrained LDA model & list of genes used
+
+```{r}
+fit_lda <- readRDS("janesick_2023/processed/fit_lda.RDS")
+shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
+genes_to_keep <- readRDS("janesick_2023/processed/genes_to_keep.RDS")
+# wts_obj <- readRDS("janesick_2023/raw_clean/wts_obj_clean.RDS")
+```
+
+# Add quantile matched data to WTS object
+
+```{r}
+wts_expr_clean <- fread("janesick_2023/processed/scRNAseq_data_quantile_matched.txt") %>% as.data.frame()
+rownames(wts_expr_clean) <- wts_expr_clean$V1
+wts_expr_clean$V1 <- NULL
+
+wts_meta_clean <- readRDS("janesick_2023/raw_clean/wts_meta_clean.RDS") %>% as.data.frame()
+wts_obj = CreateSeuratObject(counts = wts_expr_clean, meta.data = wts_meta_clean)
+```
+
+# Check gene counts of random genes
+```{r}
+raw_counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
+raw_exp <- as.matrix(t(raw_counts))
+raw_df <- as.data.frame(raw_exp)
+
+p <- ggplot(raw_df, aes(x=ABCC11)) +
+  geom_density()
+p
+
+```
+
+
+# Filter to invasive tumour cells only
+
+```{r}
+wts_obj_invasive <- subset(wts_obj, subset = Annotation %in% "Invasive_Tumor")
+```
+
+# Extract the RAW counts and apply log-CPM normalisation
+
+```{r}
+# Extract RAW counts (not normalized) - we'll normalize the same way as ISS training data
+raw_counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
+
+# Transpose so cells are rows and genes are columns
+expr_matrix <- as.matrix(t(raw_counts))
+expr_df <- as.data.frame(expr_matrix)
+
+# Log transformation
+gene_cols <- setdiff(colnames(expr_df), "cell_id")
+
+expr_df[, gene_cols] <- log1p(
+  expr_df[, gene_cols]
+  )
+
+
+# Add cell identifiers
+expr_df$cell_id <- rownames(expr_df)
+```
+
+# Align genes between two data sets
+```{r}
+genes_in_scrna <- intersect(genes_to_keep, colnames(expr_df))
+cat("\nGene alignment summary:\n")
+cat("Genes in LDA model:", length(genes_to_keep), "\n")
+cat("Genes found in scRNA-seq:", length(genes_in_scrna), "\n")
+# Create expression matrix with only available genes
+expr_df_aligned <- expr_df %>%
+  dplyr::select(cell_id, all_of(genes_in_scrna))
+# reorder columns to match the training data
+expr_df_aligned <- expr_df_aligned %>%
+  dplyr::select(cell_id, all_of(genes_to_keep))
+```
+
+# Apply LDA model to predict surface / core labels
+```{r}
+# Remove cell_id column for prediction
+expr_for_prediction <- expr_df_aligned %>%
+  dplyr::select(-cell_id)
+
+# Make predictions
+lda_predictions <- predict(fit_lda, newdata = expr_for_prediction)
+
+# Extract predicted classes and posterior probabilities
+predicted_classes <- lda_predictions$class
+posterior_probs <- lda_predictions$posterior
+lda_scores <- lda_predictions$x
+
+# Create results dataframe
+results_df <- data.frame(
+  cell_id = expr_df_aligned$cell_id,
+  predicted_class = predicted_classes,
+  prob_core = posterior_probs[, "Core"],
+  prob_surface = posterior_probs[, "Surface"],
+  LD1 = lda_scores[, 1],
+  annotation = wts_obj_invasive$Annotation[match(expr_df_aligned$cell_id, colnames(wts_obj_invasive))],
+  stringsAsFactors = FALSE
+)
+
+results_df_filtered <- results_df %>%
+  filter(LD1 < 0.3 | LD1 > 1.0)
+
+# Summary of predictions (UPDATE THIS)
+cat("\n=== Prediction Summary ===\n")
+cat("Total cells predicted:", nrow(results_df), "\n")
+cat("High-confidence cells:", nrow(results_df_filtered), "\n")
+cat("Filtered out (ambiguous):", nrow(results_df) - nrow(results_df_filtered), "\n\n")
+cat("High-confidence class distribution:\n")
+print(table(results_df_filtered$predicted_class))
+```
+
+```{r}
+# Plot LDA projection for scRNA-seq predictions
+# Use results_df (all predictions) to show the full distribution
+ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = c(0.3, 1), linetype = "dashed", color = "black") +
+  annotate("text", x = -1.5, y = 0.4, label = "High confidence\nCore", size = 3) +
+  annotate("text", x = 2.5, y = 0.4, label = "High confidence\nSurface", size = 3) +
+  annotate("text", x = 0.25, y = 0.5, label = "Ambiguous\nregion", size = 3, color = "gray30") +
+  theme_minimal() +
+  labs(title = "LDA Projection of scRNA-seq Predictions", 
+       x = "LD1", 
+       y = "Density",
+       fill = "Predicted Class")
+```
+
+# Use results_df (all predictions) to show the full distribution
+ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = c(-1.0, 1.5), linetype = "dashed", color = "black") +
+  annotate("text", x = -1.5, y = 0.4, label = "High confidence\nCore", size = 3) +
+  annotate("text", x = 2.5, y = 0.4, label = "High confidence\nSurface", size = 3) +
+  annotate("text", x = 0.25, y = 0.5, label = "Ambiguous\nregion", size = 3, color = "gray30") +
+  theme_minimal() +
+  labs(title = "LDA Projection of scRNA-seq Predictions", 
+       x = "LD1", 
+       y = "Density",
+       fill = "Predicted Class")
+
+# Add Predictions to Seurat Object
+```{r}
+# Add predictions back to the invasive subset
+# Initialize all as NA
+wts_obj_invasive$predicted_surface_class <- NA
+wts_obj_invasive$prob_core <- NA
+wts_obj_invasive$LD1_score <- NA
+
+# Add high-confidence predictions only
+high_conf_idx <- match(results_df_filtered$cell_id, colnames(wts_obj_invasive))
+wts_obj_invasive$predicted_surface_class[high_conf_idx] <- as.character(results_df_filtered$predicted_class)
+wts_obj_invasive$prob_core[high_conf_idx] <- results_df_filtered$prob_core
+wts_obj_invasive$LD1_score[high_conf_idx] <- results_df_filtered$LD1
+
+# Also add to full Seurat object
+wts_obj$predicted_surface_class <- NA
+wts_obj$prob_core <- NA
+wts_obj$LD1_score <- NA
+
+invasive_cells <- colnames(wts_obj_invasive)
+wts_obj$predicted_surface_class[colnames(wts_obj) %in% invasive_cells] <- 
+  wts_obj_invasive$predicted_surface_class
+wts_obj$prob_core[colnames(wts_obj) %in% invasive_cells] <- 
+  wts_obj_invasive$prob_core
+wts_obj$LD1_score[colnames(wts_obj) %in% invasive_cells] <- 
+  wts_obj_invasive$LD1_score
+
+saveRDS(wts_obj_invasive, file = "janesick_2023/processed/wts_obj_invasive.RDS")
+
+cat("\nPredictions added to Seurat object\n")
+cat("High-confidence cells:", sum(!is.na(wts_obj_invasive$predicted_surface_class)), "\n")
+cat("Low-confidence cells (NA):", sum(is.na(wts_obj_invasive$predicted_surface_class)), "\n")
+```

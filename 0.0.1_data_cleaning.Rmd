@@ -1,0 +1,123 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+
+# Load Libraries
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+knitr::opts_knit$set(root.dir = "/home/glennrdx/Documents/lab_projects/microenvironments/01_data")
+
+# Load libraries
+library(tidyverse) # CRAN
+library(Matrix) # CRAN
+library(ggplot2) # CRAN
+library(data.table) # CRAN
+library(Seurat) # CRAN
+library(dplyr) # CRAN
+library(viridis) # CRAN
+library(sctransform) # CRAN
+library(RANN) # CRAN
+library(scry) # bioconductor
+library(SingleCellExperiment) # bioconductor
+```
+
+# 0.1.1 - Whole Trasncriptome Sequencing (wts) Data 
+
+```{r}
+# Read scRNA-seq expression data
+wts_expr_clean <- fread("janesick_2023/raw/scRNA_gene_expression.txt") %>% as.data.frame()
+# Load cell type annotations
+wts_meta_clean <- fread("janesick_2023/raw/scRNA_cell_types.txt") %>% as.data.frame()
+
+# transpose the data so genes are rows not columns (which coerses the data to a matrix). Then convert it back to a dataframe.
+wts_expr_clean <- as.data.frame(t(wts_expr_clean))
+# Important - no barcodes present in expression file so I assume they are in the same order as the meta file (and assign them to the expression matrix)
+colnames(wts_expr_clean) <- wts_meta_clean$Barcode
+
+# Clean the formatting of the metadata df
+rownames(wts_meta_clean) <- wts_meta_clean$Barcode
+wts_meta_clean <- wts_meta_clean[, "Annotation", drop = FALSE]
+
+# Create Seurat objects
+wts_obj_clean = CreateSeuratObject(counts = wts_expr_clean, meta.data = wts_meta_clean)
+
+# map boolean value to cells whether the are cancerous or not
+cancerous_map <- c(
+  "Stromal" = FALSE,
+  "Macrophages_1" = FALSE,
+  "Perivascular-Like" = FALSE,
+  "Myoepi_ACTA2+" = FALSE,
+  "CD4+_T_Cells" = FALSE,
+  "DCIS 1" = TRUE,
+  "Prolif_Invasive_Tumor" = TRUE,
+  "Invasive_Tumor" = TRUE,
+  "CD8+_T_Cells" = FALSE,
+  "Endothelial" = FALSE,
+  "Macrophages_2" = FALSE,
+  "DCIS 2" = TRUE,
+  "B_Cells" = FALSE,
+  "Stromal_&_T_Cell_Hybrid" = FALSE,
+  "T_Cell_&_Tumor_Hybrid" = TRUE,
+  "IRF7+_DCs" = FALSE,
+  "Mast_Cells" = FALSE,
+  "LAMP3+_DCs" = FALSE,
+  "Myoepi_KRT15+" = FALSE,
+  "Unlabeled" = FALSE
+)
+
+# Add a new column to meta.data indicating whether each cell is cancerous
+wts_obj_clean <- AddMetaData(
+  wts_obj_clean,
+  metadata = sapply(wts_obj_clean$Annotation, function(x) cancerous_map[[x]]),
+  col.name = "Cancerous"
+)
+
+wts_genes <- rownames(wts_expr_clean)
+
+saveRDS(wts_expr_clean, file = "janesick_2023/raw_clean/wts_expr_clean.RDS")
+saveRDS(wts_meta_clean, file = "janesick_2023/raw_clean/wts_meta_clean.RDS")
+saveRDS(wts_obj_clean, file = "janesick_2023/raw_clean/wts_obj_clean.RDS")
+
+rm(wts_expr_clean, wts_meta_clean, cancerous_map, wts_obj_clean); gc()
+```
+
+# 0.2.2 - ISS data
+
+```{r}
+# Load & clean ISS expression matrix
+iss_expr_clean <- fread("janesick_2023/raw/ISS_gene_expression.txt", header = TRUE) # load file
+rownames(iss_expr_clean) <- iss_expr_clean[[1]] # set rownames to the gene names stored in column 1
+iss_expr_clean[[1]] <- NULL # now remove column 1
+colnames(iss_expr_clean) <- as.character(colnames(iss_expr_clean)) # ensure colnames are strings
+
+# Load & clean ISS annotations
+iss_cell_types   <- fread("janesick_2023/raw/ISS_cell_types.txt", skip = 1, header = TRUE) # load file
+iss_cell_types <- data.frame(t(iss_cell_types)) # transpose so cells are rows
+colnames(iss_cell_types) <- c('Annotation') # label row as 'annotations'
+rownames(iss_cell_types) <- as.character(rownames(iss_cell_types)) # ensure colnames are string
+rownames(iss_cell_types) <- trimws(rownames(iss_cell_types)) # trim leading spaces
+
+# Load ISS cell meta data (containing spatial coordinates)
+iss_meta_clean <- fread("janesick_2023/raw/ISS_cells.csv")
+iss_meta_clean$Annotation <- iss_cell_types$Annotation
+
+iss_genes <- rownames(iss_expr_clean)
+
+saveRDS(iss_expr_clean, file = "janesick_2023/raw_clean/iss_expr_clean.RDS")
+saveRDS(iss_meta_clean, file = "janesick_2023/raw_clean/iss_meta_clean.RDS")
+
+rm(iss_expr_clean, iss_meta_clean); gc()
+```
+
+# 0.3.1
+```{r}
+# find shared genes between WTD and ISS data.
+shared_genes <- intersect(iss_genes, wts_genes)
+saveRDS(shared_genes, file = 'janesick_2023/processed/shared_genes.RDS')
+
+rm(list = ls()); gc()
+```
+

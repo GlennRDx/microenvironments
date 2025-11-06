@@ -1,0 +1,360 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+
+# Load Libraries
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+knitr::opts_knit$set(root.dir = "/home/glennrdx/Documents/lab_projects/microenvironments/01_data")
+
+library(tidyverse) # CRAN
+library(Matrix) # CRAN
+library(ggplot2) # CRAN
+library(data.table) # CRAN
+library(Seurat) # CRAN
+library(dplyr) # CRAN
+library(viridis) # CRAN
+library(sctransform) # CRAN
+library(RANN) # CRAN
+library(scry) # bioconductor
+library(SingleCellExperiment) # bioconductor
+library(DESeq2) # bioconductor
+
+# **Important** Select the same classification_method used in script 0.3.1 **Important**
+classification_method <- "surface_class_nn"
+# classification_method <- "surface_class_clusters"
+
+# Load the exact genes used in LDA training
+genes_to_keep <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/genes_to_keep.RDS")
+train_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/train_genes.RDS")
+
+n = 3 # number of pseudo-replicates
+```
+
+# Validation Process:
+- Retrain LDA model on 2/3 of ISS genes (script 0.3.1).  
+- Predict TME in scRNA-seq whole transcriptome data (WTD) (script 0.4.1).  
+- Calculate DEGs of surface vs core in WTD.  
+- Calculate DEGs of surface vs core in ISS data.  
+- Check similarity of the remaining 1/3 of genes in predicted WTD TME and ISS TME.  
+
+# DGE analysis method: surface vs core
+- Data prep:  
+  - Load Seurat object.  
+  - Extract expression matrix (genes x cells).  
+  - Extract meta data (predicted_surface_class).  
+  - Randomly assign cells to 3 pseudo-replicates.  
+  - Sum the counts across cells within each pseudo-replicate to create pseudo-bulk profiles.  
+- QC Filter low-count genes (total counts < 10, across samples)  
+- DESeq2 Analysis (might switch to limma-voom):  
+  - Create DESeq2 object with pseudo-bulk counts and sample metadata.  
+  - Specify experimental design (condition comparisons).  
+  - Run DESeq2 pipeline.  
+- Extract results.  
+
+# WTD - DGE  
+### Load data and extract raw counts separately for surface and core.  
+```{r}
+# load data
+scRNA_invasive <- readRDS('janesick_2023/processed/wts_obj_invasive.RDS')
+
+scRNA_surface <- subset(scRNA_invasive, subset = predicted_surface_class %in% 'Surface')
+scRNA_core <- subset(scRNA_invasive, subset = predicted_surface_class %in% 'Core')
+
+scRNA_surface_expr <- GetAssayData(scRNA_surface, assay = 'RNA', layer = 'counts')
+scRNA_core_expr <- GetAssayData(scRNA_core, assay = 'RNA', layer = 'counts')
+```
+
+### Surface - Create n pseudo-replicates, and pseudo bulk the cells in each.  
+```{r}
+# Create 3 pseudo-replicate pseudobulks - surface
+set.seed(123)  # for reproducibility
+n_cells <- ncol(scRNA_surface_expr)
+cell_assignments <- sample(rep(1:n, length.out = n_cells))
+
+surface_pseudobulk_WTD <- sapply(1:n, function(i) {
+  cells_in_sample <- which(cell_assignments == i)
+  rowSums(scRNA_surface_expr[, cells_in_sample, drop = FALSE])
+})
+
+# Set column names
+colnames(surface_pseudobulk_WTD) <- paste0("surface_sample", 1:n)
+```
+
+### Core - Create n pseudo-replicates, and pseudo bulk the cells in each.  
+```{r}
+# Create n pseudo-replicate pseudobulks - core
+set.seed(123)  # for reproducibility
+n_cells <- ncol(scRNA_core_expr)
+cell_assignments <- sample(rep(1:n, length.out = n_cells))
+
+core_pseudobulk_WTD <- sapply(1:n, function(i) {
+  cells_in_sample <- which(cell_assignments == i)
+  rowSums(scRNA_core_expr[, cells_in_sample, drop = FALSE])
+})
+
+# Set column names
+colnames(core_pseudobulk_WTD) <- paste0("core_sample", 1:n)
+```
+
+### Merge the two raw count matrices together in preparation for DGE analysis.  
+```{r}
+# merge two expression matrices together by gene name (stored in rownames)
+counts_WTD <- cbind(core_pseudobulk_WTD, surface_pseudobulk_WTD)
+
+# Filter to only genes used in LDA training (genes_to_keep)
+counts_WTD <- counts_WTD[rownames(counts_WTD) %in% genes_to_keep, ]
+
+# meta data for DESeq2
+coldata <- data.frame(
+  sample = colnames(counts_WTD),
+  condition = c(rep("Core", n), rep("Surface", n))
+)
+```
+
+### Create DESeq2 Object.  
+```{r}
+dds_WTD <- DESeqDataSetFromMatrix(
+  countData = counts_WTD,
+  colData = coldata,
+  design = ~ condition
+)
+```
+
+
+### Filter low-count genes.  
+```{r}
+# keep <- rowSums(counts(dds_WTD)) >= 10
+# dds_WTD <- dds_WTD[keep, ]
+```
+
+### Run DESeq2.  
+```{r}
+dds_WTD <- DESeq(dds_WTD)
+```
+
+### Extract results.  
+```{r}
+res_WTD <- results(dds_WTD, contrast = c("condition", "Surface", "Core"))
+res_WTD <- res_WTD[order(res_WTD$padj), ] # sort by p-adj
+```
+
+\newpage
+# ISS - DGE
+### Load data and extract raw counts separately for surface and core.  
+```{r}
+# load data
+iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
+
+ISS_surface <- iss_obj_invasive[, iss_obj_invasive@meta.data[[classification_method]] == 'Surface']
+ISS_core <- iss_obj_invasive[, iss_obj_invasive@meta.data[[classification_method]] == 'Core']
+
+ISS_surface_expr <- GetAssayData(ISS_surface, assay = 'RNA', layer = 'counts')
+ISS_core_expr <- GetAssayData(ISS_core, assay = 'RNA', layer = 'counts')
+```
+
+### Surface - Create n pseudo-replicates, and pseudo bulk the cells in each.  
+```{r}
+# Create 3 pseudo-replicate pseudobulks - surface
+set.seed(123)  # for reproducibility
+n_cells <- ncol(ISS_surface_expr)
+cell_assignments <- sample(rep(1:n, length.out = n_cells))
+
+surface_pseudobulk_ISS <- sapply(1:n, function(i) {
+  cells_in_sample <- which(cell_assignments == i)
+  rowSums(ISS_surface_expr[, cells_in_sample, drop = FALSE])
+})
+
+# Set column names
+colnames(surface_pseudobulk_ISS) <- paste0("surface_sample", 1:n)
+```
+
+### Core - Create n pseudo-replicates, and pseudo bulk the cells in each.  
+```{r}
+# Create 3 pseudo-replicate pseudobulks - core
+set.seed(123)  # for reproducibility
+n_cells <- ncol(ISS_core_expr)
+cell_assignments <- sample(rep(1:n, length.out = n_cells))
+
+core_pseudobulk_ISS <- sapply(1:n, function(i) {
+  cells_in_sample <- which(cell_assignments == i)
+  rowSums(ISS_core_expr[, cells_in_sample, drop = FALSE])
+})
+
+# Set column names
+colnames(core_pseudobulk_ISS) <- paste0("core_sample", 1:n)
+```
+
+### Merge the two raw count matrices together in preparation for DGE analysis.  
+```{r}
+# merge two expression matrices together by gene name (stored in rownames)
+counts_ISS <- cbind(core_pseudobulk_ISS, surface_pseudobulk_ISS)
+
+# Filter to only genes used in LDA training (genes_to_keep)
+counts_ISS <- counts_ISS[rownames(counts_ISS) %in% genes_to_keep, ]
+
+# meta data for DESeq2
+coldata <- data.frame(
+  sample = colnames(counts_ISS),
+  condition = c(rep("Core", n), rep("Surface", n))
+)
+```
+
+### Create DESeq2 Object.  
+```{r}
+dds_ISS <- DESeqDataSetFromMatrix(
+  countData = counts_ISS,
+  colData = coldata,
+  design = ~ condition
+)
+```
+
+
+### Filter low-count genes.  
+```{r}
+# keep <- rowSums(counts(dds_ISS)) >= 10
+# dds_ISS <- dds_ISS[keep, ]
+```
+
+### Run DESeq2.  
+```{r}
+dds_ISS <- DESeq(dds_ISS)
+```
+
+### Extract results.  
+```{r}
+res_ISS <- results(dds_ISS, contrast = c("condition", "Surface", "Core"))
+res_ISS <- res_ISS[order(res_ISS$padj), ] # sort by p-adj
+```
+
+\newpage
+```{r}
+# Merge results together
+df_ISS <- as.data.frame(res_ISS) %>%
+  rownames_to_column("gene") %>%
+  dplyr::select(gene, log2FoldChange_ISS = log2FoldChange,
+         padj_ISS = padj, stat_ISS = stat)
+
+df_WTD <- as.data.frame(res_WTD) %>%
+  rownames_to_column("gene") %>%
+  dplyr::select(gene, log2FoldChange_WTD = log2FoldChange,
+         padj_WTD = padj, stat_WTD = stat)
+
+comparison_full <- inner_join(df_ISS, df_WTD, by = 'gene')
+
+# add significant categories
+comparison_full <- comparison_full %>%
+  mutate(
+    sig_ISS = ifelse(padj_ISS < 0.05, "Significant", "Not_Significant"),
+    sig_WTD = ifelse(padj_WTD < 0.05, "Significant", "Not_Significant"),
+    both_sig = paste(sig_ISS, sig_WTD, sep = " / "),
+    concordant = sign(log2FoldChange_ISS) == sign(log2FoldChange_WTD)
+  )
+
+# Add training/validation label to genes
+comparison_full$training_gene <- comparison_full$gene %in% train_genes
+
+# Check gene counts
+cat("\nGene breakdown:\n")
+cat("Total genes in comparison:", nrow(comparison_full), "\n")
+cat("Training genes:", sum(comparison_full$training_gene), "\n")
+cat("Validation genes:", sum(!comparison_full$training_gene), "\n")
+
+# CREATE comparison variable for TRAINING genes
+comparison <- comparison_full[comparison_full$training_gene == TRUE, ]
+```
+
+### Correlation Analysis
+```{r}
+cor_pearson <- cor(comparison$log2FoldChange_ISS, 
+                   comparison$log2FoldChange_WTD, 
+                   use = "complete.obs")
+cor_spearman <- cor(comparison$log2FoldChange_ISS, 
+                    comparison$log2FoldChange_WTD, 
+                    method = "spearman", 
+                    use = "complete.obs")
+
+cat("TRAINING GENES\n")
+cat("Pearson correlation:", round(cor_pearson, 3), "\n")
+cat("Spearman correlation:", round(cor_spearman, 3), "\n")
+```
+
+### Concordance Table
+```{r}
+table(comparison$sig_ISS, comparison$sig_WTD)
+```
+
+### Four Quadrant Scatter Plot
+```{r}
+ggplot(comparison, aes(x = log2FoldChange_ISS, y = log2FoldChange_WTD)) +
+  geom_point(aes(color = both_sig), alpha = 0.6, size = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "blue") +
+  scale_color_manual(values = c(
+    "Not Significant / Not Significant" = "gray70",
+    "Significant / Not Significant" = "orange",
+    "Not Significant / Significant" = "purple",
+    "Significant / Significant" = "red"
+  )) +
+  labs(
+    title = "Comparison of DESeq2 Results: ISS vs WTD TRAINING GENES",
+    subtitle = paste0("Pearson r = ", round(cor_pearson, 3)),
+    x = "log2 Fold Change (ISS)",
+    y = "log2 Fold Change (WTD)",
+    color = "Significance Status"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+# Redefine comparison for VALIDATION genes
+comparison <- comparison_full[comparison_full$training_gene == FALSE, ]
+```
+
+### Correlation Analysis
+```{r}
+cor_pearson <- cor(comparison$log2FoldChange_ISS, 
+                   comparison$log2FoldChange_WTD, 
+                   use = "complete.obs")
+cor_spearman <- cor(comparison$log2FoldChange_ISS, 
+                    comparison$log2FoldChange_WTD, 
+                    method = "spearman", 
+                    use = "complete.obs")
+
+cat("Pearson correlation:", round(cor_pearson, 3), "\n")
+cat("Spearman correlation:", round(cor_spearman, 3), "\n")
+```
+
+### Concordance Table
+```{r}
+table(comparison$sig_ISS, comparison$sig_WTD)
+```
+
+### Four Quadrant Scatter Plot
+```{r}
+ggplot(comparison, aes(x = log2FoldChange_ISS, y = log2FoldChange_WTD)) +
+  geom_point(aes(color = both_sig), alpha = 0.6, size = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "blue") +
+  scale_color_manual(values = c(
+    "Not Significant / Not Significant" = "gray70",
+    "Significant / Not Significant" = "orange",
+    "Not Significant / Significant" = "purple",
+    "Significant / Significant" = "red"
+  )) +
+  labs(
+    title = "Comparison of DESeq2 Results: ISS vs WTD VALIDATION GENES",
+    subtitle = paste0("Pearson r = ", round(cor_pearson, 3)),
+    x = "log2 Fold Change (ISS)",
+    y = "log2 Fold Change (WTD)",
+    color = "Significance Status"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```

@@ -1,0 +1,189 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+geometry: margin=0.2in
+---
+
+# Load Libraries and set wd
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+knitr::opts_knit$set(root.dir = "/home/glennrdx/Documents/lab_projects/microenvironments/01_data")
+
+# Load Libraries
+library(MASS)
+library(dplyr)
+library(data.table, quietly = T)
+library(ggplot2)
+library(caret)
+```
+
+# Load Data
+```{r}
+# Load & clean ISS expression matrix
+iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
+# Load iss invasive cells seurat object
+iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
+
+# Choose classification type (nearest neighbours or clustering method - check script 0.2.2)
+# classification_method <- "surface_class_nn"
+classification_method <- "surface_class_clusters"
+
+# Load list of shared genes
+shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
+```
+
+# Select 2/3 of the shared genes for training
+```{r}
+# Randomly select 2/3 of the shared genes for training
+set.seed(123)
+train_genes <- sample(shared_genes, size = floor(length(shared_genes) * 2/3))
+
+# Save list of training genes
+saveRDS(train_genes, file = "janesick_2023/processed/train_genes.RDS")
+```
+
+# Filter gene expression df to invasive tumours only (filter by invasive tumour cell ID)
+```{r}
+inv_tumour_id <- iss_obj_invasive$cell_id # get inv tumour ID's
+inv_tumour_logical_vec <- colnames(iss_expr) %in% inv_tumour_id # create logical vec of tumour ID's
+inv_tumour_expr <- iss_expr[, ..inv_tumour_logical_vec] # Filter the gene expression data to invasive tumours only
+
+gene_names <- rownames(iss_expr) # save gene names (save row names)
+col_inv_id <- colnames(inv_tumour_expr) # save cell id of invasive cells (save colnames)
+inv_tumour_expr <- data.frame(t(inv_tumour_expr)) # transposing removes row/col names
+colnames(inv_tumour_expr) <- gene_names # reassign lost gene names
+rownames(inv_tumour_expr) <- col_inv_id # reassign lost row names
+inv_tumour_expr <- inv_tumour_expr[, colnames(inv_tumour_expr) %in% train_genes]
+inv_tumour_expr$cell_id <- as.integer(rownames(inv_tumour_expr)) # create new column called cell_id
+```
+
+# log transform
+```{r}
+# Log transformation
+gene_cols <- setdiff(colnames(inv_tumour_expr), "cell_id")
+
+inv_tumour_expr[, gene_cols] <- log1p(
+  inv_tumour_expr[, gene_cols]
+  )
+```
+
+# Attach surface classification data to inv tumour gene expression matrix
+```{r}
+surface_class <- iss_obj_invasive@meta.data[, c('cell_id', classification_method)] # get surface class annotations
+colnames(surface_class)[2] <- "surface_class"
+inv_tumour_expr <- merge(surface_class, inv_tumour_expr, by = 'cell_id') # merge two df's by cell id
+rownames(inv_tumour_expr) <- inv_tumour_expr$cell_id # assign cell id to rownames
+inv_tumour_expr$cell_id <- NULL
+```
+
+# Split full dataset into training / test datasets (80/20 split)
+```{r}
+# Take 80% for training dataset
+inv_gene_exp_train <- inv_tumour_expr %>%
+  mutate(cell_id = rownames(.)) %>%
+  group_by(surface_class) %>%
+  slice_sample(prop = 0.8) %>%
+  ungroup()
+
+# Use remaining 20% for test dataset
+inv_gene_exp_test <- inv_tumour_expr %>%
+  mutate(cell_id = rownames(.)) %>%
+  filter(!cell_id %in% inv_gene_exp_train$cell_id)
+
+# Restore the cell_id's to the rownames and remove the cell_id column
+inv_gene_exp_train <- as.data.frame(inv_gene_exp_train) # convert to df to allow assignment of rownames
+rownames(inv_gene_exp_train) <- inv_gene_exp_train$cell_id
+inv_gene_exp_train$cell_id <- NULL
+
+inv_gene_exp_test <- as.data.frame(inv_gene_exp_test) # convert to df to allow assignment of rownames
+rownames(inv_gene_exp_test) <- inv_gene_exp_test$cell_id
+inv_gene_exp_test$cell_id <- NULL
+```
+
+# Feature selection  
+ - Remove genes that have zero variance and thus are not discriminatory between groups.  
+```{r}
+gene_cols <- setdiff(colnames(inv_gene_exp_train), "surface_class")
+
+# Calculate variance within each group for each gene
+keep_genes <- sapply(gene_cols, function(gene) {
+  var_by_group <- inv_gene_exp_train %>%
+    group_by(surface_class) %>%
+    summarise(var = var(.data[[gene]], na.rm = TRUE), .groups = 'drop')
+
+  # Keep gene if it has non-zero variance in at least one group
+  any(var_by_group$var > 0)
+})
+
+# Filter to keep only informative genes
+genes_to_keep <- names(keep_genes)[keep_genes]
+genes_removed <- names(keep_genes)[!keep_genes]
+
+print("Genes removed:")
+print(genes_removed)
+
+inv_gene_exp_filtered <- inv_gene_exp_train %>%
+  dplyr::select(surface_class, all_of(genes_to_keep))
+
+saveRDS(genes_to_keep, file = "janesick_2023/processed/genes_to_keep.RDS")
+```
+
+# Remove NAs
+```{r}
+# Remove rows with NA in surface_class before fitting
+inv_gene_exp_filtered <- inv_gene_exp_filtered %>%
+  filter(!is.na(surface_class))
+```
+
+
+# Fit LDA model
+```{r}
+fit_lda <- lda(surface_class ~ ., inv_gene_exp_filtered)
+
+saveRDS(fit_lda, file = "janesick_2023/processed/fit_lda.RDS")
+```
+
+# Plot first two linear discriminants
+```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
+lda_values <- predict(fit_lda)$x
+lda_df <- data.frame(LD1 = lda_values[,1], surface_class = inv_gene_exp_filtered$surface_class)
+
+ggplot(lda_df, aes(x = LD1, fill = surface_class)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "LDA Projection of Surface vs Core Cells", x = "LD1", y = "Density")
+
+```
+
+# Predict surface_class with LDA model
+```{r}
+# Subset test data to only include genes used in the LDA model
+inv_gene_exp_test_filtered <- inv_gene_exp_test %>%
+  dplyr::select(surface_class, all_of(genes_to_keep))
+
+# Predict surface_class for test data
+lda_predictions <- predict(fit_lda, newdata = inv_gene_exp_test_filtered)
+```
+
+```{r}
+inv_gene_exp_test$predicted_surface_class <- lda_predictions$class
+predicted_classes <- lda_predictions$class
+```
+
+```{r}
+accuracy <- mean(predicted_classes == inv_gene_exp_test$surface_class)
+print(paste("Test Accuracy:", round(accuracy, 3)))
+```
+
+```{r}
+# Create confusion matrix
+conf_matrix <- confusionMatrix(
+  factor(predicted_classes),
+  factor(inv_gene_exp_test$surface_class)
+)
+
+# Print confusion matrix and stats
+print(conf_matrix)
+```

@@ -1,0 +1,181 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+
+
+# Load Packages
+
+```{r message = FALSE, warning = FALSE}
+# Load libraries
+library(tidyverse, quietly = T) # CRAN
+library(Matrix, quietly = T) # CRAN
+library(ggplot2, quietly = T) # CRAN
+library(data.table, quietly = T) # CRAN
+library(Seurat, quietly = T) # CRAN
+library(dplyr, quietly = T) # CRAN
+library(viridis, quietly = T) # CRAN
+library(sctransform, quietly = T) # CRAN
+library(RANN, quietly = T) # CRAN
+library(ggrastr, quietly = T) # CRAN
+library(scry, quietly = T) # bioconductor
+library(SingleCellExperiment, quietly = T) # bioconductor
+```
+
+# Part 1: Basic plot of spatial data coloured by Annotation
+
+## Load data & create Seurat object
+```{r warning = FALSE}
+# ISS
+data_dir <- "/home/glennrdx/Documents/lab_projects/microenvironments/01_data/"
+ISS_gene_expression <- fread(file.path(data_dir, "ISS_gene_expression_new.txt")) %>% as.data.frame()
+ISS_cell_types   <- fread(file.path(data_dir, "ISS_cell_types.txt")) %>% as.data.frame()
+
+# Load ISS cell meta data with spatial coordinates
+cells <- fread(file.path(data_dir, "cells.csv")) %>% as.data.frame()
+
+# Look at unique cell types
+ISS_cell_types <- as.data.frame(t(ISS_cell_types))
+ISS_cell_types$V1 <- NULL
+colnames(ISS_cell_types) <- 'Annotation'
+unique(ISS_cell_types$Annotation)
+
+# Create Seurat objects
+ISS_obj = CreateSeuratObject(counts = ISS_gene_expression, meta.data = ISS_cell_types)
+```
+
+## QC
+
+```{r warning = FALSE}
+## QC
+
+```
+
+## Normalisation
+
+```{r warning = FALSE}
+## Normalisation - log transformed values
+
+```
+
+## Plot of ISS data coloured by cell type
+
+```{r warning = FALSE}
+# plot data
+cells <- cbind(cells, ISS_cell_types)
+
+# Basic spatial scatter plot
+ggplot(cells, aes(x = x_centroid, y = y_centroid)) +
+  rasterise(geom_point(aes(color = Annotation), size = 0.3, alpha = 0.7), dpi = 300) +
+  scale_size_continuous(name = "Cell Area", range = c(0.5, 3)) +
+  scale_x_reverse() +
+  theme_minimal() +
+  labs(title = "Spatial Data Coloured By Annotation",
+       x = "X Coordinate", y = "Y Coordinate")
+```
+
+# Part 2: Predicting microenvironment (if invasive tumour cell is located on surface/core)
+
+- Select random invasive tumour cell
+- Calculate square region around it
+- Calculate boolean value for every cell in dataset. T for within square region, F for outside
+- For every cell that is T, calculate distance from initial random cell to every cell labelled T
+- Filter to top 20 closest cells
+- Calculate the percentage of these that are invasive tumour cells
+- Define threshold for percentage of invasive tumour neighbours meaning surface tumour cell
+- Do this for 100 random invasive tumour cells
+
+```{r warning = FALSE}
+### Step 1
+# Select random invasive tumour cell(s)
+# Calculate square region around it/them
+set.seed(123)
+meta <- ISS_obj@meta.data %>% rownames_to_column(var = 'cell')
+# find_random_cells <- meta %>% filter(Annotation == 'Invasive_Tumor') %>% slice_sample(n = 100) %>% pull('cell')
+find_random_cells <- meta %>% filter(Annotation == 'Invasive_Tumor') %>% pull('cell') # all invasive tumours
+random_invasive_tumors <- cells[rownames(cells) %in% find_random_cells,]
+cells$surface <- NA
+
+for (i in 1:nrow(random_invasive_tumors)) {
+  RIT <- random_invasive_tumors[i, ]
+
+  RIT$x_min <- RIT$x_centroid - 25
+  RIT$x_max <- RIT$x_centroid + 25
+  RIT$y_min <- RIT$y_centroid - 25
+  RIT$y_max <-RIT$y_centroid + 25
+
+### Step 2
+# Calculate boolean value for every cell in dataset. T for within square region, F for outside
+# create new df contianing only cells in that region
+  cells$within_region <- (cells$x_centroid > RIT$x_min &
+                            cells$x_centroid < RIT$x_max &
+                            cells$y_centroid > RIT$y_min &
+                            cells$y_centroid < RIT$y_max)
+  cells_within_region <- subset(cells, within_region)
+
+### Step 3
+# For every cell that is T, calculate distance from initial random cell to every cell labelled T
+  # define distance metric function
+  euclidean <- function(x1,y1,x2,y2){
+    res <- ((x2 - x1)**2 + (y2 - y1)**2)**0.5
+    return(res)
+  }
+
+  # calculate distance from random invasive tumour to each other cell in the region
+  cells_within_region$distance <- apply(X = cells_within_region, MARGIN = 1, function(row) euclidean(RIT$x_centroid, RIT$y_centroid, as.numeric(row['x_centroid']), as.numeric(row['y_centroid'])))
+
+  # order by distance ascendingly
+  cells_within_region <- arrange(cells_within_region, distance)
+
+  # filter to top n closest cells
+  closest_cells <- cells_within_region[1:20,]
+
+### Step 4 calculate percentage of neighbours that are inv. tumours
+  if (nrow(closest_cells) > 0) {
+    perc_tumour <- mean(closest_cells$Annotation == "Invasive_Tumor", na.rm = TRUE)
+  } else {
+    perc_tumour <- NA
+  }
+
+  cells[cells$cell_id == RIT$cell_id, "perc_tumour"] <- perc_tumour
+}
+```
+
+## Colour experimentation
+
+```{r, fig.width=35, fig.height=35, out.width="100%"}
+threshold <- 0.85
+cells$surface_class <- ifelse(
+  is.na(cells$perc_tumour), "Other",
+  ifelse(cells$perc_tumour < threshold, "Surface", "Core")
+)
+
+ggplot(cells, aes(x = x_centroid, y = y_centroid)) +
+  rasterise(geom_point(aes(color = surface_class), size = 0.5, alpha = 0.8), dpi = 300) +
+  scale_color_manual(
+    values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75"),
+    na.value = "white"
+  ) +
+  scale_x_reverse() +
+  coord_fixed() +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt"),
+    axis.title.x = element_text(margin = margin(t = 2)),
+    axis.title.y = element_text(margin = margin(r = 2)),
+    axis.text = element_text(size = 20),
+    legend.text = element_text(size = 20),
+    legend.title = element_text(size = 20),
+    panel.background = element_rect(fill = "snow", color = NA),
+    plot.background = element_rect(fill = "snow", color = NA),
+    panel.grid.major = element_line(color = "grey90", linewidth = 2),
+    panel.grid.minor = element_line(color = "grey90", linewidth = 2),
+    axis.ticks.length = unit(1, "pt"),
+    axis.ticks = element_line(color = "grey90")
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 4)))
+```

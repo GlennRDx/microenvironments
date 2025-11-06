@@ -1,0 +1,233 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+
+# Load Libraries
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+knitr::opts_knit$set(root.dir = "/home/glennrdx/Documents/lab_projects/microenvironments/01_data/")
+
+# Load Libraries
+library(tidyverse)
+library(Seurat)
+library(dplyr)
+
+# Load ISS / scRNA-seq data
+iss_obj_invasive <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/iss_obj_invasive.RDS")
+scRNA_invasive <- readRDS('/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/wts_obj_invasive.RDS')
+
+
+# Load shared genes and training genes
+shared_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/shared_genes.RDS")
+train_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/train_genes.RDS")
+
+# Select classification method
+classification_method <- "surface_class_clusters"
+
+# findmarkers_method <- "wilcox"
+findmarkers_method <- "MAST"
+# findmarkers_method <- "DESeq2"
+```
+
+# Chunk_1
+
+```{r}
+# WTD - FindMarkers Analysis
+
+# Normalize data if not already done
+if (!"data" %in% Layers(scRNA_invasive[["RNA"]]) || 
+    length(LayerData(scRNA_invasive, assay = "RNA", layer = "data")) == 0) {
+  scRNA_invasive <- NormalizeData(scRNA_invasive)
+}
+
+genes_to_test <- intersect(rownames(scRNA_invasive), shared_genes)
+cat("Genes to test:", length(genes_to_test), "\n")
+
+scRNA_invasive <- subset(scRNA_invasive, features = genes_to_test)
+# Set identity to predicted surface class
+Idents(scRNA_invasive) <- scRNA_invasive$predicted_surface_class
+
+# Run FindMarkers: Surface vs Core
+# This tests Surface against Core (positive log2FC = higher in Surface)
+markers_WTD <- FindMarkers(
+  scRNA_invasive,
+  ident.1 = "Surface",
+  ident.2 = "Core",
+  test.use = findmarkers_method,
+  logfc.threshold = 0,  # Test all genes
+  min.pct = 0,  # Gene must be expressed in at least 10% of cells in either group
+  verbose = TRUE
+)
+
+# Convert to dataframe and add gene names
+res_WTD <- as.data.frame(markers_WTD) %>%
+  rownames_to_column("gene") %>%
+  dplyr::rename(
+    log2FoldChange_WTD = avg_log2FC,
+    pval_WTD = p_val,
+    padj_WTD = p_val_adj
+  ) %>%
+  arrange(padj_WTD)
+
+cat("Total genes tested:", nrow(res_WTD), "\n")
+cat("Significant genes (padj < 0.05):", sum(res_WTD$padj_WTD < 0.05, na.rm = TRUE), "\n")
+```
+
+
+```{r}
+# ISS - FindMarkers Analysis
+
+# Normalize data if not already done
+if (!"data" %in% Layers(iss_obj_invasive[["RNA"]]) || 
+    length(LayerData(iss_obj_invasive, assay = "RNA", layer = "data")) == 0) {
+  iss_obj_invasive <- NormalizeData(iss_obj_invasive)
+}
+
+# Filter to shared genes BEFORE analysis
+genes_to_test <- intersect(rownames(iss_obj_invasive), shared_genes)
+cat("Genes to test:", length(genes_to_test), "\n")
+
+iss_obj_invasive <- subset(iss_obj_invasive, features = genes_to_test)
+
+# Set identity to classification method
+Idents(iss_obj_invasive) <- iss_obj_invasive@meta.data[[classification_method]]
+
+# Run FindMarkers: Surface vs Core
+markers_ISS <- FindMarkers(
+  iss_obj_invasive,
+  ident.1 = "Surface",
+  ident.2 = "Core",
+  test.use = findmarkers_method,
+  logfc.threshold = 0,
+  min.pct = 0,
+  verbose = TRUE
+)
+
+# Convert to dataframe and add gene names
+res_ISS <- as.data.frame(markers_ISS) %>%
+  rownames_to_column("gene") %>%
+  dplyr::rename(
+    log2FoldChange_ISS = avg_log2FC,
+    pval_ISS = p_val,
+    padj_ISS = p_val_adj
+  ) %>%
+  arrange(padj_ISS)
+```
+
+```{r}
+# Merge and Compare Results
+
+comparison_full <- inner_join(
+  res_ISS %>% dplyr::select(gene, log2FoldChange_ISS, padj_ISS),
+  res_WTD %>% dplyr::select(gene, log2FoldChange_WTD, padj_WTD),
+  by = "gene"
+)
+
+# Add significance categories
+comparison_full <- comparison_full %>%
+  mutate(
+    sig_ISS = ifelse(padj_ISS < 0.05, "Significant", "Not_Significant"),
+    sig_WTD = ifelse(padj_WTD < 0.05, "Significant", "Not_Significant"),
+    both_sig = paste(sig_ISS, sig_WTD, sep = " / "),
+    concordant = sign(log2FoldChange_ISS) == sign(log2FoldChange_WTD)
+  )
+
+# Add training/validation label
+comparison_full$training_gene <- comparison_full$gene %in% train_genes
+
+# Summary statistics
+cat("Total genes in comparison:", nrow(comparison_full), "\n")
+cat("Training genes:", sum(comparison_full$training_gene), "\n")
+cat("Validation genes:", sum(!comparison_full$training_gene), "\n\n")
+
+# Split into training and validation
+comparison_training <- comparison_full %>% filter(training_gene == TRUE)
+comparison_validation <- comparison_full %>% filter(training_gene == FALSE)
+
+# Get only mutually significant genes
+comparisons_training_sig <- comparison_training %>%
+  filter(both_sig == "Significant / Significant")
+comparisons_validation_sig <- comparison_validation %>%
+  filter(both_sig == "Significant / Significant")
+```
+
+```{r}
+# Correlation Analysis
+
+# Training genes correlation
+cor_pearson_training <- cor(
+  comparisons_training_sig$log2FoldChange_ISS,
+  comparisons_training_sig$log2FoldChange_WTD,
+  use = "complete.obs"
+)
+cat("Training genes - Pearson r (sig genes):", round(cor_pearson_training, 3), "\n")
+
+# Validation genes correlation
+cor_pearson_validation <- cor(
+  comparisons_validation_sig$log2FoldChange_ISS,
+  comparisons_validation_sig$log2FoldChange_WTD,
+  use = "complete.obs"
+)
+cat("Validation genes - Pearson r (sig genes):", round(cor_pearson_validation, 3), "\n")
+
+```
+
+```{r}
+# ============================================================================
+# Visualization
+# ============================================================================
+
+# Training genes plot
+p1 <- ggplot(comparison_training, aes(x = log2FoldChange_ISS, y = log2FoldChange_WTD)) +
+  geom_point(aes(color = both_sig), alpha = 0.6, size = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "blue") +
+  scale_color_manual(values = c(
+    "Not Significant / Not Significant" = "gray70",
+    "Significant / Not Significant" = "orange",
+    "Not Significant / Significant" = "purple",
+    "Significant / Significant" = "red"
+  )) +
+  labs(
+    title = "FindMarkers Results: ISS vs WTD TRAINING GENES",
+    subtitle = paste0("Pearson r = ", round(cor_pearson_training, 3),
+                     " (n=", nrow(comparisons_training_sig), " mutually sig)"),
+    x = "log2 Fold Change (ISS)",
+    y = "log2 Fold Change (WTD)",
+    color = "Significance Status"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+print(p1)
+
+# Validation genes plot
+p2 <- ggplot(comparison_validation, aes(x = log2FoldChange_ISS, y = log2FoldChange_WTD)) +
+  geom_point(aes(color = both_sig), alpha = 0.6, size = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "blue") +
+  scale_color_manual(values = c(
+    "Not Significant / Not Significant" = "gray70",
+    "Significant / Not Significant" = "orange",
+    "Not Significant / Significant" = "purple",
+    "Significant / Significant" = "red"
+  )) +
+  labs(
+    title = "FindMarkers Results: ISS vs WTD VALIDATION GENES",
+    subtitle = paste0("Pearson r = ", round(cor_pearson_validation, 3),
+                     " (n=", nrow(comparisons_validation_sig), " mutually sig)"),
+    x = "log2 Fold Change (ISS)",
+    y = "log2 Fold Change (WTD)",
+    color = "Significance Status"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+print(p2)
+```
+

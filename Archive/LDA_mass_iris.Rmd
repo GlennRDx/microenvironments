@@ -1,0 +1,29 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+
+# Load Libraries
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+library(MASS)
+```
+
+# Head of Iris dataset
+
+```{r}
+head(iris, 2)
+```
+
+```{r}
+fit.LDA = lda( Species ~ ., iris)
+```
+
+```{r}
+#Perform classification
+fit.LDA.C = predict(fit.LDA, newdata=iris[,c(1,2,3,4)])$class
+fit.LDA.C
+```
+

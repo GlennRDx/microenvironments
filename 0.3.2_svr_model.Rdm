@@ -1,0 +1,56 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+
+# Load Libraries
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+library(e1071)
+```
+
+# Chunk_1
+
+```{r}
+# Response: tumour_depth (numeric, continuous)
+# Feature matrix: gene expression (cells x genes)
+expr_t <- t(ISS_gene_expression)
+
+# Use only cells with a defined tumour_depth value (surface_class "Core" or "Surface")
+use_cells <- !is.na(cells$tumour_depth)
+X <- expr_t[use_cells, ]    # gene expression features for valid cells
+y <- as.numeric(cells$tumour_depth[use_cells])  # continuous response variable
+
+```
+
+```{r}
+set.seed(123)
+train_idx <- sample(seq_len(length(y)), size = round(0.7 * length(y)))
+X_train <- X[train_idx, ]
+y_train <- y[train_idx]
+X_test <- X[-train_idx, ]
+y_test <- y[-train_idx]
+```
+
+```{r}
+svr_model <- svm(
+  x = X_train,
+  y = y_train,
+  kernel = "linear",      # try "linear" or "radial"
+  scale = TRUE,
+  type = "eps-regression" # specify regression mode
+)
+```
+
+```{r}
+y_pred <- predict(svr_model, X_test)
+# Mean squared error (MSE) and R^2
+mse <- mean((y_pred - y_test)^2)
+cat("Test set mean squared error:", mse, "\n")
+
+r2 <- cor(y_pred, y_test)^2
+cat("Test set R-squared:", r2, "\n")
+```
+

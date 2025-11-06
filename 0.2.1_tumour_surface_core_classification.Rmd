@@ -1,0 +1,176 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+# Load Packages
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+knitr::opts_knit$set(root.dir = "/home/glennrdx/Documents/lab_projects/microenvironments/01_data/")
+
+# Load libraries
+library(tidyverse, quietly = T) # CRAN
+library(Matrix, quietly = T) # CRAN
+library(ggplot2, quietly = T) # CRAN
+library(data.table, quietly = T) # CRAN
+library(Seurat, quietly = T) # CRAN
+library(dplyr, quietly = T) # CRAN
+library(viridis, quietly = T) # CRAN
+library(sctransform, quietly = T) # CRAN
+library(RANN, quietly = T) # CRAN
+library(ggrastr, quietly = T) # CRAN
+library(scry, quietly = T) # bioconductor
+library(SingleCellExperiment, quietly = T) # bioconductor
+```
+
+# Load / clean data & create Seurat object
+
+```{r}
+# Load & clean ISS expression matrix
+ISS_gene_expression <- fread("ISS_gene_expression.txt", header = TRUE) # load file
+rownames(ISS_gene_expression) <- ISS_gene_expression[[1]] # set rownames to the gene names stored in column 1
+ISS_gene_expression[[1]] <- NULL # now remove column 1
+colnames(ISS_gene_expression) <- as.character(colnames(ISS_gene_expression)) # ensure colnames are strings
+```
+
+```{r}
+# Load & clean ISS annotations
+ISS_cell_types   <- fread("ISS_cell_types.txt", skip = 1, header = TRUE) # load file
+ISS_cell_types <- data.frame(t(ISS_cell_types)) # transpose so cells are rows
+colnames(ISS_cell_types) <- c('Annotation') # label row as 'annotations'
+rownames(ISS_cell_types) <- as.character(rownames(ISS_cell_types)) # ensure colnames are string
+```
+
+```{r}
+# Load ISS cell meta data (containing spatial coordinates)
+cells <- fread("cells.csv")
+cells$Annotation <- ISS_cell_types$Annotation
+```
+
+```{r}
+# Create Seurat objects
+# ISS_obj = CreateSeuratObject(counts = ISS_gene_expression, meta.data = ISS_cell_types)
+```
+
+# Part 2: Classifying invasive tumours as surface / core
+
+### Goal:  
+Determine the percentage of tumourous neighbours of 20 closest cells for each invasive tumour. 'cells' object contains a row for each cell and annotation columns for various features.
+ - A new feature will be created called 'perc_tumours' representing this number.
+
+### Method:  
+#### Step 1:
+For each invasive tumour in 'cells':
+  - Calculate square region around the centroid  
+  - For all cells in that region, calculate distance to initial invasive tumour cell  
+  - Filter to top 30 closest neighbouring cells  
+  - Calculate percentage of neighbours that are tumourous and save number in 'cells' dataframe  
+  
+#### Step 2:
+Plot spatial data, where:
+  - non invasive tumours are grey  
+  - invasive tumours with less than 95% of tumourous neighbours are dark pink (surface)  
+  - invasive tumours with more than 95% of tumourous neighbours are light pink (core)  
+  
+```{r}
+invasive_cells <- cells[cells$Annotation == "Invasive_Tumor", ] # get invasive tumour cells
+cells$perc_tumours <- NA # initialise percentage of tumorous neighbors
+
+.min_neighbours <- Inf # variable to help track number of neighbours in square region. Used to optimise size of square
+
+.start_time <- Sys.time()
+
+for (i in 1:nrow(invasive_cells)) {
+  # Get current cell coordinates
+  .cell_x <- invasive_cells$x_centroid[i]
+  .cell_y <- invasive_cells$y_centroid[i]
+  .inv_cell_id <- invasive_cells$cell_id[i]
+  
+  # Define square region (10x10 around the cell)
+  .x_min <- .cell_x - 150
+  .x_max <- .cell_x + 150
+  .y_min <- .cell_y - 150
+  .y_max <- .cell_y + 150
+  
+  # Find cells within the square region
+  within_region <- cells$x_centroid >= .x_min & 
+                   cells$x_centroid <= .x_max &
+                   cells$y_centroid >= .y_min & 
+                   cells$y_centroid <= .y_max
+  
+  # Count neighbors in region (excluding the cell itself)
+  n_neighbours <- sum(within_region) - 1
+  
+  # Update minimum if this is smaller
+  if (n_neighbours < .min_neighbours) {
+    .min_neighbours <- n_neighbours
+  }
+  
+  # Get neighbors in the region
+  .temp <- cells[within_region, ]
+  
+  # Calculate distance from current cell to all neighbors
+  .temp$distance <- sqrt((.temp$x_centroid - .cell_x)^2 + 
+                        (.temp$y_centroid - .cell_y)^2)
+  
+  # Sort by distance and take top 30 closest (excluding the cell itself)
+  .temp <- .temp[.temp$cell_id != .inv_cell_id, ]
+  .temp <- .temp[order(.temp$distance), ]
+  .temp <- .temp[1:min(30, nrow(.temp)), ]
+  
+  # Check if neighbor is tumorous
+  .temp$Tumourous_neighbour <- .temp$Annotation %in% c("Invasive_Tumor", "Prolif_Invasive_Tumor")
+  
+  # Calculate percentage of tumorous neighbors
+  cells$perc_tumours[cells$cell_id == .inv_cell_id] <- sum(.temp$Tumourous_neighbour) / nrow(.temp)
+}
+
+# Save the data to an RData file
+save(cells, file = 'cells_floop.RData')
+save(invasive_cells, file = "/home/glennrdx/Documents/lab_projects/microenvironments/01_data/invasive_cells.RData")
+
+.end_time <- Sys.time()
+
+.end_time - .start_time
+.min_neighbours
+```
+
+\newpage
+
+# Plot
+
+```{r, fig.width=35, fig.height=35, out.width="100%"}
+threshold <- 0.90
+cells$surface_class <- ifelse(
+  is.na(cells$perc_tumours), "Other",
+  ifelse(cells$perc_tumours < threshold, "Surface", "Core")
+)
+
+ggplot(cells, aes(x = x_centroid, y = y_centroid)) +
+  rasterise(geom_point(aes(color = surface_class), size = 0.5, alpha = 0.8), dpi = 300) +
+  scale_color_manual(
+    values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75"),
+    na.value = "grey75"
+  ) +
+  scale_x_reverse() +
+  coord_fixed() +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt"),
+    axis.title.x = element_text(margin = margin(t = 2)),
+    axis.title.y = element_text(margin = margin(r = 2)),
+    axis.text = element_text(size = 20),
+    legend.text = element_text(size = 20),
+    legend.title = element_text(size = 20),
+    panel.background = element_rect(fill = "snow", color = NA),
+    plot.background = element_rect(fill = "snow", color = NA),
+    panel.grid.major = element_line(color = "grey90", linewidth = 2),
+    panel.grid.minor = element_line(color = "grey90", linewidth = 2),
+    axis.ticks.length = unit(1, "pt"),
+    axis.ticks = element_line(color = "grey90")
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 4)))
+```

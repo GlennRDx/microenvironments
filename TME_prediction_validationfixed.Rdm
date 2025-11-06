@@ -1,0 +1,42 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+
+# Load Libraries
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+library(DESeq2)
+library(pak)
+```
+
+# Validation Process:
+- Retrain LDA model on 2/3 of ISS genes (script 0.3.1).  
+- Predict TME in scRNA-seq whole transcriptome data (WTD) (script 0.4.1).  
+- Calculate DEGs of surface vs core in WTD.  
+- Calculate DEGs of surface vs core in ISS data.  
+- Check similarity of the remaining 1/3 of genes in predicted WTD TME and ISS TME.  
+
+# DGE analysis method: surface vs core
+- Data prep:  
+  - Start with expression matrix (genes x cells).  
+  - Randomly assign cells to 3 pseudo-samples.  
+  - Sum the counts across cells within each pseudo-sample to create pseudo-bulk profiles.  
+- QC Filter low-count genes (total counts < 10, across samples)  
+- DESeq2 Analysis (might switch to limma-voom):  
+  - Create DESeq2 object with pseudo-bulk counts and sample metadata.  
+  - Specify experimental design (condition comparisons).  
+  - Run DESeq2 pipeline.  
+- Extract results.  
+
+# WTD
+```{r}
+# load expression matrix
+
+
+# Create 3 pseudo-sample pseudobulks
+
+# Create 
+```
