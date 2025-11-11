@@ -174,35 +174,6 @@ summary(iss_meta$tumour_depth[iss_meta$surface_class_nn == "Surface"])
 # Plot of tumour depth
 
 ```{r, fig.width=16*1.2, fig.height=12*1.2, dpi=300, dev='tiff', out.width='100%'}
-# ggplot(iss_meta, aes(x = x_centroid, y = y_centroid)) +
-#   rasterise(geom_point(aes(color = tumour_depth), size = 0.5, alpha = 0.8), dpi = 300) +
-#   scale_color_gradientn(
-#     colors = paletteer_c("grDevices::Blue-Red 3", 30),
-#     na.value = "grey75"
-#   ) +
-#   scale_x_reverse() +
-#   coord_fixed() +
-#   theme_minimal() +
-#   theme(
-#     legend.position = "bottom",
-#     legend.box = "horizontal",
-#     plot.margin = ggplot2::margin(t = 5, r = 5, b = 5, l = 5, unit = "pt"),
-#     axis.title.x = element_text(margin = ggplot2::margin(t = 2)),
-#     axis.title.y = element_text(margin = ggplot2::margin(r = 2)),
-#     axis.text = element_text(size = 20),
-#     legend.text = element_text(size = 20),
-#     legend.title = element_text(size = 20),
-#     panel.background = element_rect(fill = "snow", color = NA),
-#     plot.background = element_rect(fill = "snow", color = NA),
-#     panel.grid.major = element_line(color = "grey90", linewidth = 2),
-#     panel.grid.minor = element_line(color = "grey90", linewidth = 2),
-#     axis.ticks.length = unit(1, "pt"),
-#     axis.ticks = element_line(color = "grey90")
-#   ) +
-#   guides(color = guide_legend(override.aes = list(size = 4)))
-
-
-
 ggplot(iss_meta, aes(x = x_centroid, y = y_centroid)) +
   geom_point(aes(color = tumour_depth), size = 0.1) +
   scale_color_gradientn(
