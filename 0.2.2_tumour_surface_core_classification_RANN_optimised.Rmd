@@ -3,7 +3,11 @@ output:
   pdf_document:
     latex_engine: xelatex
 geometry: margin=0.2in
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding,
+  output_dir = "/home/glennrdx/Documents/lab_projects/microenvironments/02_output/") })
 ---
+
 # Load Packages
 
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
