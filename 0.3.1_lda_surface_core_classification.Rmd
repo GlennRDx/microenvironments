@@ -28,7 +28,8 @@ iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
 
 # Choose classification type (nearest neighbours or clustering method - check script 0.2.2)
 # classification_method <- "surface_class_nn"
-classification_method <- "surface_class_clusters"
+# classification_method <- "surface_class_clusters"
+classification_method <- "surface_class_radius"
 
 # Load list of shared genes
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
