@@ -127,14 +127,26 @@ for (i in seq_along(target_cells)) {
 
 ```{r}
 iss_meta <- merge(iss_meta, core_surface, by = "cell_id", all.x = TRUE)
-iss_meta[, surface_class_nn := ifelse(is.na(Classification), "Other", Classification)]
+iss_meta[, surface_class_radius := ifelse(is.na(Classification), "Other", Classification)]
 ```
 
+```{r}
+table(iss_meta$surface_class_radius)
+```
+
+```{r}
+# Make Seurat object with ISS data
+iss_obj <- CreateSeuratObject(counts = iss_expr, meta.data = iss_meta)
+
+# filter to invasive cells only
+iss_obj_invasive <- subset(iss_obj, subset = Annotation %in% 'Invasive_Tumor')
+saveRDS(iss_obj_invasive, file = "janesick_2023/processed/iss_obj_invasive.RDS")
+```
 
 # Plot
 ```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
 ggplot(iss_meta, aes(x = x_centroid, y = y_centroid)) +
-  geom_point(aes(color = surface_class_nn), size = 0.01, alpha = 0.8, shape = '.') +
+  geom_point(aes(color = surface_class_radius), size = 0.01, alpha = 0.8, shape = '.') +
   scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75"), na.value = "grey75") +
   scale_x_reverse() +
   coord_fixed() +
