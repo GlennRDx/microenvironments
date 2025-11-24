@@ -21,7 +21,7 @@ library(caret)
 
 # Load Data
 ```{r}
-# Load & clean ISS expression matrix
+# Load ISS expression matrix
 iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
 # Load iss invasive cells seurat object
 iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
