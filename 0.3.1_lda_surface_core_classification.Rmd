@@ -165,7 +165,7 @@ inv_gene_exp_test_filtered <- inv_gene_exp_test %>%
   dplyr::select(surface_class, all_of(genes_to_keep))
 
 # Predict surface_class for test data
-lda_predictions <- predict(fit_lda, newdata = inv_gene_exp_test_filtered, )
+lda_predictions <- predict(fit_lda, newdata = inv_gene_exp_test_filtered)
 ```
 
 ```{r}
