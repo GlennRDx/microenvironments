@@ -28,7 +28,7 @@ genes_to_keep <- readRDS("janesick_2023/processed/genes_to_keep.RDS")
 # wts_obj <- readRDS("janesick_2023/raw_clean/wts_obj_clean.RDS")
 ```
 
-# Add quantile matched data to WTS object
+# Create new WTS object with quantile matched data
 
 ```{r}
 wts_expr_clean <- fread("janesick_2023/processed/scRNAseq_data_quantile_matched.txt") %>% as.data.frame()
