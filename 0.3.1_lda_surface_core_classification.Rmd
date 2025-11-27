@@ -6,27 +6,25 @@ output:
     df_print: paged
 geometry: margin=0.2in
 ---
-
-# Load Libraries and set wd
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
 knitr::opts_knit$set(root.dir = "/home/glennrdx/Documents/lab_projects/microenvironments/01_data")
+```
 
+# Libraries, Data, & Parameters
+```{r}
 # Load Libraries
 library(MASS)
 library(dplyr)
 library(data.table, quietly = T)
 library(ggplot2)
 library(caret)
-```
 
-# Load Data
-```{r}
 # Load Data
 iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
 iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
 
-# Paramters
+# Parameters
 # Choose classification type (nearest neighbours or clustering method - check script 0.2.1)
 # classification_method <- "surface_class_nn"
 # classification_method <- "surface_class_clusters"
@@ -42,6 +40,22 @@ train_genes <- sample(shared_genes, size = floor(length(shared_genes) * 2/3))
 # Save list of training genes
 saveRDS(train_genes, file = "janesick_2023/processed/train_genes.RDS")
 ```
+
+# Filter confounding cells
+- Cells labelled shallow core
+- Cells labelled dead/dying cells (NAs in surface_classification_clusters)
+```{r}
+# #calc number of cells before filt.
+# n_before <- ncol(iss_obj_invasive)
+# 
+# # filter out cells
+# iss_obj_invasive <- subset(iss_obj_invasive, subset = depth_category != "Shallow Core" & !is.na(surface_class_clusters))
+# 
+# n_after <- ncol(iss_obj_invasive)
+# 
+# cat(round((n_before - n_after)/n_before, 2)*100, "% cells removed.")
+```
+
 
 # Filter gene expression df to invasive tumours only (filter by invasive tumour cell ID)
 ```{r}
