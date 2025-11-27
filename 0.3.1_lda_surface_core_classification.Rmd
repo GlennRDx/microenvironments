@@ -21,18 +21,16 @@ library(caret)
 
 # Load Data
 ```{r}
-# Load ISS expression matrix
+# Load Data
 iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
-# Load iss invasive cells seurat object
 iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
+shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
 
-# Choose classification type (nearest neighbours or clustering method - check script 0.2.2)
+# Paramters
+# Choose classification type (nearest neighbours or clustering method - check script 0.2.1)
 # classification_method <- "surface_class_nn"
 # classification_method <- "surface_class_clusters"
 classification_method <- "surface_class_radius"
-
-# Load list of shared genes
-shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
 ```
 
 # Select 2/3 of the shared genes for training
