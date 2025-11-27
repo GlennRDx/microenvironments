@@ -147,7 +147,7 @@ print(table(results_df_filtered$predicted_class))
 # Use results_df (all predictions) to show the full distribution
 ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
   geom_density(alpha = 0.5) +
-  geom_vline(xintercept = c(-0.5, -0.2), linetype = "dashed", color = "black") +
+  geom_vline(xintercept = c(-0.4, 0), linetype = "dashed", color = "black") +
   annotate("text", x = -1.5, y = 0.4, label = "High confidence\nCore", size = 3) +
   annotate("text", x = 2.5, y = 0.4, label = "High confidence\nSurface", size = 3) +
   annotate("text", x = 0.25, y = 0.5, label = "Ambiguous\nregion", size = 3, color = "gray30") +
