@@ -41,13 +41,13 @@ wts_obj = CreateSeuratObject(counts = wts_expr_clean, meta.data = wts_meta_clean
 
 # Check gene counts of random genes
 ```{r}
-raw_counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
-raw_exp <- as.matrix(t(raw_counts))
-raw_df <- as.data.frame(raw_exp)
-
-p <- ggplot(raw_df, aes(x=ABCC11)) +
-  geom_density()
-p
+# raw_counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
+# raw_exp <- as.matrix(t(raw_counts))
+# raw_df <- as.data.frame(raw_exp)
+# 
+# p <- ggplot(raw_df, aes(x=ABCC11)) +
+#   geom_density()
+# p
 
 ```
 
@@ -119,8 +119,19 @@ results_df <- data.frame(
   stringsAsFactors = FALSE
 )
 
+# results_df_filtered <- results_df %>%
+  # filter(LD1 < -0.5 | LD1 > -0.2)
+
+# set the probability threshold of the surface/core predictions to filter out low probability predictions
+prob_threshold <- 0.85
+
+# identify the ma probability for each cell and then filter if less than the prob_threshold
+results_df <- results_df %>%
+  mutate(max_prob = pmax(prob_core, prob_surface),
+         status = ifelse(max_prob >= prob_threshold, "High Confidence", "Ambiguous"))
+
 results_df_filtered <- results_df %>%
-  filter(LD1 < 0.3 | LD1 > 1.0)
+  filter(status == "High Confidence")
 
 # Summary of predictions (UPDATE THIS)
 cat("\n=== Prediction Summary ===\n")
@@ -136,7 +147,7 @@ print(table(results_df_filtered$predicted_class))
 # Use results_df (all predictions) to show the full distribution
 ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
   geom_density(alpha = 0.5) +
-  geom_vline(xintercept = c(0.3, 1), linetype = "dashed", color = "black") +
+  geom_vline(xintercept = c(-0.5, -0.2), linetype = "dashed", color = "black") +
   annotate("text", x = -1.5, y = 0.4, label = "High confidence\nCore", size = 3) +
   annotate("text", x = 2.5, y = 0.4, label = "High confidence\nSurface", size = 3) +
   annotate("text", x = 0.25, y = 0.5, label = "Ambiguous\nregion", size = 3, color = "gray30") +
@@ -145,6 +156,8 @@ ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
        x = "LD1", 
        y = "Density",
        fill = "Predicted Class")
+
+# hard coded cut offs may be the problem
 ```
 
 # Use results_df (all predictions) to show the full distribution

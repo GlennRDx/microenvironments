@@ -276,9 +276,6 @@ iss_meta <- iss_meta %>%
 table(iss_meta$surface_class_clusters)
 ```
 
-
-
-
 ## Save object
 ```{r}
 # Make Seurat object with ISS data
@@ -288,9 +285,3 @@ iss_obj <- CreateSeuratObject(counts = iss_expr, meta.data = iss_meta)
 iss_obj_invasive <- subset(iss_obj, subset = Annotation %in% 'Invasive_Tumor')
 saveRDS(iss_obj_invasive, file = "janesick_2023/processed/iss_obj_invasive.RDS")
 ```
-
-
-
-
-
-

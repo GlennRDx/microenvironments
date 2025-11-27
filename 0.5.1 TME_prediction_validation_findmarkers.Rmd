@@ -25,7 +25,8 @@ shared_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments
 train_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/train_genes.RDS")
 
 # Select classification method
-classification_method <- "surface_class_clusters"
+# classification_method <- "surface_class_clusters"
+classification_method <- "surface_class_radius"
 
 # findmarkers_method <- "wilcox"
 findmarkers_method <- "MAST"
@@ -75,7 +76,6 @@ res_WTD <- as.data.frame(markers_WTD) %>%
 cat("Total genes tested:", nrow(res_WTD), "\n")
 cat("Significant genes (padj < 0.05):", sum(res_WTD$padj_WTD < 0.05, na.rm = TRUE), "\n")
 ```
-
 
 ```{r}
 # ISS - FindMarkers Analysis
