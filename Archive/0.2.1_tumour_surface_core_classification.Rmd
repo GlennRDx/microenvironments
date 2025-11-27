@@ -1,0 +1,273 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding,
+  output_dir = "/home/glennrdx/Documents/lab_projects/microenvironments/02_output/") })
+---
+
+# Load Packages
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+knitr::opts_knit$set(root.dir = "/home/glennrdx/Documents/lab_projects/microenvironments/01_data/")
+
+# Load libraries
+library(tidyverse, quietly = T) # CRAN
+library(Matrix, quietly = T) # CRAN
+library(ggplot2, quietly = T) # CRAN
+library(data.table, quietly = T) # CRAN
+library(Seurat, quietly = T) # CRAN
+library(dplyr, quietly = T) # CRAN
+library(viridis, quietly = T) # CRAN
+library(sctransform, quietly = T) # CRAN
+library(RANN, quietly = T) # CRAN
+library(ggrastr, quietly = T) # CRAN
+library(cowplot)
+library(paletteer)
+library(scry, quietly = T) # bioconductor
+library(SingleCellExperiment, quietly = T) # bioconductor
+```
+
+# Load Data
+
+```{r}
+iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
+iss_meta <- readRDS("janesick_2023/raw_clean/iss_meta_clean.RDS")
+```
+
+### Goal:  
+For each invasive tumour cell, determine the percentage neighbours within the defined radius are either of the two types: Prolif_Invasive_Tumor/Invasive_Tumor (i.e. what percentage are tumourous, remaining percentage are other cell types).  
+
+### Method:  
+#### Step 1 - create spatial graph:  
+Define radius size R  
+Iterate over each cell:  
+  - every other cell found within the circle of radius R is now connected to index cell.  
+
+#### Step 2 - calculate neighbourhood composition of Invasive_Tumor cells:  
+For each Invasive_Tumor cell:  
+  - Calculate the percentage of neighbours that are either Invasive_Tumor or Prolif_Invasive_Tumor.  
+  - If The percentage is 90% or more, classify the Invasive_Tumor cell as "Core", otherwise "Surface".  
+
+```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
+# Parameters
+R <- 50  # Radius for neighborhood definition
+center_x <- 3250
+center_y <- 2075
+threshold <- 0.90  # Threshold for Core vs Surface classification
+
+# Create circle coordinates
+circle <- data.frame(
+  x = center_x + R * cos(seq(0, 2*pi, length.out = 500)),
+  y = center_y + R * sin(seq(0, 2*pi, length.out = 500))
+)
+
+# p1 - Main plot
+p1 <- ggplot(iss_meta, aes(x = x_centroid, y = y_centroid)) +
+  geom_point(color = "grey", size = 0.01, alpha = 0.8, shape = '.') +
+  geom_path(data = circle, aes(x = x, y = y), color = "black", linewidth = 0.3) +
+  scale_x_reverse() +
+  coord_fixed() +
+  guides(color = guide_legend(override.aes = list(shape = 16, size = 3))) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom", 
+    legend.box = "horizontal", 
+    legend.margin = margin(0, 0, 0, 0), 
+    plot.margin = margin(0, 0, 0, 0, "pt")
+  )
+
+
+# p2 - zoomed in plot
+zoom_margin <- 2.5 * R
+x_min_zoom <- center_x - zoom_margin
+x_max_zoom <- center_x + zoom_margin
+y_min_zoom <- center_y - zoom_margin
+y_max_zoom <- center_y + zoom_margin
+
+p2 <- ggplot(iss_meta, aes(x = x_centroid, y = y_centroid)) +
+  geom_point(color = "grey", size = 2, alpha = 0.8, shape = 16) + # Increase point size for visibility
+  geom_path(data = circle, aes(x = x, y = y), color = "black", linewidth = 0.5) +
+  scale_x_reverse() + # Keep the same reversed x-axis direction
+  coord_fixed(xlim = c(x_min_zoom, x_max_zoom), ylim = c(y_min_zoom, y_max_zoom)) + # Zoom in and keep it square
+  labs(x = NULL, y = NULL) + # Remove axis labels for a cleaner inset
+  theme_bw() + # Use a simple theme
+  theme(
+    plot.background = element_rect(fill = "white", color = "black", linewidth = 0.5), # White background with border
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 6),
+    plot.title = element_text(size = 8, hjust = 0.5),
+    plot.margin = margin(2, 2, 2, 2, "pt")
+  ) +
+  ggtitle("Zoomed View")
+
+# final_plot - Superimpose p2 on p1 using cowplot
+final_plot <- ggdraw(p1) +
+  draw_plot(
+    p2,
+    x = 0.10, # Start 65% from the left (Bottom Right Position)
+    y = 0.20, # Start 10% from the bottom (Bottom Right Position)
+    width = 0.3, # Square width
+    height = 0.3  # Square height
+  )
+
+final_plot
+```
+  
+# RADIUS METHOD
+```{r}
+iss_meta <- data.table(
+  cell_id = iss_meta$cell_id,
+  x_centroid = iss_meta$x_centroid,
+  y_centroid = iss_meta$y_centroid,
+  Annotation = iss_meta$Annotation
+)
+coords <- iss_meta[, .(x_centroid, y_centroid)]
+
+# Perform radius search
+nn_result <- nn2(data = coords, query = coords, searchtype = "radius", radius = R)
+
+adj_list <- vector("list", nrow(iss_meta))
+names(adj_list) <- iss_meta$cell_id
+
+for (i in 1:nrow(iss_meta)) {
+  neighbor_idx <- nn_result$nn.idx[i, ]
+  neighbor_idx <- neighbor_idx[neighbor_idx != 0 & neighbor_idx != i]  # remove 0s and self
+  adj_list[[i]] <- iss_meta$cell_id[neighbor_idx]
+}
+
+target_cells <- iss_meta[Annotation %in% c("Invasive_Tumor", "Prolif_Invasive_Tumor"), cell_id]
+
+core_surface <- data.table(cell_id = target_cells, Classification = NA_character_)
+
+for (i in seq_along(target_cells)) {
+  cell <- target_cells[i]
+  neighbors <- adj_list[[as.character(cell)]]
+  
+  if (length(neighbors) == 0) {
+    core_surface[i, Classification := "Surface"]
+    next
+  }
+  
+  num_target_neighbors <- sum(neighbors %in% target_cells)
+  fraction <- num_target_neighbors / length(neighbors)
+  
+  if (fraction > threshold) {
+    core_surface[i, Classification := "Core"]
+  } else {
+    core_surface[i, Classification := "Surface"]
+  }
+}
+```
+
+```{r}
+iss_meta <- merge(iss_meta, core_surface, by = "cell_id", all.x = TRUE)
+iss_meta[, surface_class_radius := ifelse(is.na(Classification), "Other", Classification)]
+```
+
+```{r}
+table(iss_meta$surface_class_radius)
+```
+
+
+```{r}
+# Make Seurat object with ISS data
+iss_obj <- CreateSeuratObject(counts = iss_expr, meta.data = iss_meta)
+
+# filter to invasive cells only
+iss_obj_invasive <- subset(iss_obj, subset = Annotation %in% 'Invasive_Tumor')
+saveRDS(iss_obj_invasive, file = "janesick_2023/processed/iss_obj_invasive.RDS")
+```
+
+# Plot
+```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
+
+# Find surface cells
+subset_cells <- iss_meta[
+  iss_meta$x_centroid >= 3240 &
+  iss_meta$x_centroid <= 3320 &
+  iss_meta$y_centroid >= 2000 &
+  iss_meta$y_centroid <= 2100 &
+  iss_meta$surface_class_radius == "Surface",
+  "cell_id"
+]
+surface_cell <- iss_meta[iss_meta$cell_id == 91969,]
+center_x <- surface_cell$x_centroid
+center_y <- surface_cell$y_centroid
+#define circle
+circle <- data.frame(
+  x = center_x + R * cos(seq(0, 2*pi, length.out = 500)),
+  y = center_y + R * sin(seq(0, 2*pi, length.out = 500))
+)
+
+
+# p1 - main plot
+
+p1 <- ggplot(iss_meta, aes(x = x_centroid, y = y_centroid)) +
+  geom_point(aes(color = surface_class_radius), size = 0.01, alpha = 0.8, shape = '.') +
+  geom_path(data = circle, aes(x = x, y = y), color = "black", linewidth = 0.3) +
+  scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75"), na.value = "grey75") +
+  scale_x_reverse() +
+  coord_fixed() +
+  guides(color = guide_legend(override.aes = list(shape = 16, size = 3))) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom", 
+    legend.box = "horizontal", 
+    legend.margin = margin(0, 0, 0, 0), 
+    plot.margin = margin(0, 0, 0, 0, "pt")
+  )
+
+# p2 - superimpose zoomed view
+zoom_margin <- 2.5 * R
+x_min_zoom <- center_x - zoom_margin
+x_max_zoom <- center_x + zoom_margin
+y_min_zoom <- center_y - zoom_margin
+y_max_zoom <- center_y + zoom_margin
+
+p2 <- ggplot(iss_meta, aes(x = x_centroid, y = y_centroid)) +
+  geom_point(aes(color = surface_class_radius), size = 2, alpha = 0.8, shape = 16) + 
+  geom_path(data = circle, aes(x = x, y = y), color = "black", linewidth = 0.5) +
+  scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75"), na.value = "grey75") +
+  scale_x_reverse() +
+  # Force the zoom window
+  coord_fixed(xlim = c(x_min_zoom, x_max_zoom), ylim = c(y_min_zoom, y_max_zoom)) + 
+  labs(x = NULL, y = NULL) +
+  theme_bw() +
+  theme(
+    legend.position = "none", # Hide legend in the inset
+    plot.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 6),
+    plot.title = element_text(size = 8, hjust = 0.5),
+    plot.margin = margin(0, 0, 0, 0, "pt")
+  ) +
+  ggtitle("Zoomed View")
+
+# final plot
+plot_ratio <- 7.87 / 6.5
+inset_width <- 0.3
+inset_height <- inset_width * plot_ratio
+
+final_plot <- ggdraw(p1) +
+  draw_plot(
+    p2,
+    x = 0.12, # 65% from left (Right side)
+    y = 0.20, # 10% from bottom (Bottom side)
+    width = inset_width, 
+    height = inset_height
+  )
+
+final_plot
+```
+
+
+# KNN METHOD
+```{r}
+
+```
+
