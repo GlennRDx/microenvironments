@@ -39,8 +39,8 @@ setDT(iss_meta) # Set to data.table for speed
 # Parameters
 R <- 35  # Radius for neighbourhood definition
 K <- 25 # Number of neighbours for KNN method
-center_x <- 3250
-center_y <- 2075
+center_x <- 3249.27 # random cell x coord
+center_y <- 2027.26 # random cell y coord
 THRESHOLD <- 0.85  # Threshold for Core vs Surface classification
 ```
 
