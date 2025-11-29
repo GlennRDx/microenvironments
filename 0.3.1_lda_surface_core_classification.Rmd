@@ -18,24 +18,20 @@ library(dplyr)
 library(data.table, quietly = T)
 library(ggplot2)
 library(caret)
+```
 
+```{r}
 # Load Data
 iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
 iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
-
-# Parameters
-# Choose classification type (nearest neighbours or clustering method - check script 0.2.1)
-# classification_method <- "surface_class_nn"
-# classification_method <- "surface_class_clusters"
-classification_method <- "surface_class_radius"
 ```
 
 # Select 2/3 of the shared genes for training
 ```{r}
 # Randomly select 2/3 of the shared genes for training
-set.seed(123)
-train_genes <- sample(shared_genes, size = floor(length(shared_genes) * 2/3))
+set.seed(lda_params$seed)
+train_genes <- sample(shared_genes, size = floor(length(shared_genes) * lda_params$train_prop))
 
 # Save list of training genes
 saveRDS(train_genes, file = "janesick_2023/processed/train_genes.RDS")
@@ -97,7 +93,7 @@ inv_tumour_expr$cell_id <- NULL
 inv_gene_exp_train <- inv_tumour_expr %>%
   mutate(cell_id = rownames(.)) %>%
   group_by(surface_class) %>%
-  slice_sample(prop = 0.8) %>%
+  slice_sample(prop = lda_params$split_prop) %>%
   ungroup()
 
 # Use remaining 20% for test dataset

@@ -16,10 +16,9 @@ wts_params <- list(
 iss_params <- list(
   radius      = 35,    # Radius for neighbourhood definition
   knn         = 25,    # Number of neighbours for KNN method
-  center_x    = 3250,  # Center X coordinate for zooming/plotting
-  center_y    = 2075,  # Center Y coordinate for zooming/plotting
-  threshold   = 0.85,  # Threshold for Core vs Surface classification
-  zoom_radius = 50     # Default radius for zoom plots
+  centre_x    = 3249.27,  # Center X coordinate for zooming/plotting
+  centre_y    = 2027.26,  # Center Y coordinate for zooming/plotting
+  threshold   = 0.85  # Threshold for Core vs Surface classification
 )
 
 # 0.3.1
@@ -30,22 +29,22 @@ lda_params <- list(
 )
 
 # 0.3.2
-svr_params <- list(
-  seed        = 123,
-  train_split = 0.7,
-  kernel      = "linear",
-  type        = "eps-regression"
-)
+# svr_params <- list(
+#   seed        = 123,
+#   train_split = 0.7,
+#   kernel      = "linear",
+#   type        = "eps-regression"
+# )
 
 # 0.3.3
-rf_params <- list(
-  seed        = 42,
-  n_x_bins    = 5,    # Spatial bins for cross-validation
-  n_y_bins    = 5,
-  train_split = 0.8,
-  ntree       = 500,
-  nodesize    = 5
-)
+# rf_params <- list(
+#   seed        = 42,
+#   n_x_bins    = 5,    # Spatial bins for cross-validation
+#   n_y_bins    = 5,
+#   train_split = 0.8,
+#   ntree       = 500,
+#   nodesize    = 5
+# )
 
 # 0.4.1
 prediction_params <- list(

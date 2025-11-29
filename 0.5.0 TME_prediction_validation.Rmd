@@ -32,8 +32,6 @@ classification_method <- "surface_class_clusters"
 
 shared_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/shared_genes.RDS")
 train_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/train_genes.RDS")
-
-n = 2 # number of pseudo-replicates
 ```
 
 # Validation Process:
@@ -76,15 +74,15 @@ scRNA_core_expr <- GetAssayData(scRNA_core, assay = 'RNA', layer = 'counts')
 # Create 3 pseudo-replicate pseudobulks - surface
 set.seed(123)  # for reproducibility
 n_cells <- ncol(scRNA_surface_expr)
-cell_assignments <- sample(rep(1:n, length.out = n_cells))
+cell_assignments <- sample(rep(1:validation_params$n_pseudo_reps, length.out = n_cells))
 
-surface_pseudobulk_WTD <- sapply(1:n, function(i) {
+surface_pseudobulk_WTD <- sapply(1:validation_params$n_pseudo_reps, function(i) {
   cells_in_sample <- which(cell_assignments == i)
   rowSums(scRNA_surface_expr[, cells_in_sample, drop = FALSE])
 })
 
 # Set column names
-colnames(surface_pseudobulk_WTD) <- paste0("surface_sample", 1:n)
+colnames(surface_pseudobulk_WTD) <- paste0("surface_sample", 1:validation_params$n_pseudo_reps)
 ```
 
 ### Core - Create n pseudo-replicates, and pseudo bulk the cells in each.  
@@ -92,15 +90,15 @@ colnames(surface_pseudobulk_WTD) <- paste0("surface_sample", 1:n)
 # Create n pseudo-replicate pseudobulks - core
 set.seed(123)  # for reproducibility
 n_cells <- ncol(scRNA_core_expr)
-cell_assignments <- sample(rep(1:n, length.out = n_cells))
+cell_assignments <- sample(rep(1:validation_params$n_pseudo_reps, length.out = n_cells))
 
-core_pseudobulk_WTD <- sapply(1:n, function(i) {
+core_pseudobulk_WTD <- sapply(1:validation_params$n_pseudo_reps, function(i) {
   cells_in_sample <- which(cell_assignments == i)
   rowSums(scRNA_core_expr[, cells_in_sample, drop = FALSE])
 })
 
 # Set column names
-colnames(core_pseudobulk_WTD) <- paste0("core_sample", 1:n)
+colnames(core_pseudobulk_WTD) <- paste0("core_sample", 1:validation_params$n_pseudo_reps)
 ```
 
 ```{r}
@@ -164,15 +162,15 @@ ISS_core_expr <- GetAssayData(ISS_core, assay = 'RNA', layer = 'counts')
 # Create 3 pseudo-replicate pseudobulks - surface
 set.seed(123)  # for reproducibility
 n_cells <- ncol(ISS_surface_expr)
-cell_assignments <- sample(rep(1:n, length.out = n_cells))
+cell_assignments <- sample(rep(1:validation_params$n_pseudo_reps, length.out = n_cells))
 
-surface_pseudobulk_ISS <- sapply(1:n, function(i) {
+surface_pseudobulk_ISS <- sapply(1:validation_params$n_pseudo_reps, function(i) {
   cells_in_sample <- which(cell_assignments == i)
   rowSums(ISS_surface_expr[, cells_in_sample, drop = FALSE])
 })
 
 # Set column names
-colnames(surface_pseudobulk_ISS) <- paste0("surface_sample", 1:n)
+colnames(surface_pseudobulk_ISS) <- paste0("surface_sample", 1:validation_params$n_pseudo_reps)
 ```
 
 ### Core - Create n pseudo-replicates, and pseudo bulk the cells in each.  
@@ -180,15 +178,15 @@ colnames(surface_pseudobulk_ISS) <- paste0("surface_sample", 1:n)
 # Create 3 pseudo-replicate pseudobulks - core
 set.seed(123)  # for reproducibility
 n_cells <- ncol(ISS_core_expr)
-cell_assignments <- sample(rep(1:n, length.out = n_cells))
+cell_assignments <- sample(rep(1:validation_params$n_pseudo_reps, length.out = n_cells))
 
-core_pseudobulk_ISS <- sapply(1:n, function(i) {
+core_pseudobulk_ISS <- sapply(1:validation_params$n_pseudo_reps, function(i) {
   cells_in_sample <- which(cell_assignments == i)
   rowSums(ISS_core_expr[, cells_in_sample, drop = FALSE])
 })
 
 # Set column names
-colnames(core_pseudobulk_ISS) <- paste0("core_sample", 1:n)
+colnames(core_pseudobulk_ISS) <- paste0("core_sample", 1:validation_params$n_pseudo_reps)
 ```
 
 ```{r}

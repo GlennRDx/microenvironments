@@ -125,13 +125,10 @@ results_df <- data.frame(
 # results_df_filtered <- results_df %>%
   # filter(LD1 < -0.5 | LD1 > -0.2)
 
-# set the probability threshold of the surface/core predictions to filter out low probability predictions
-prob_threshold <- 0.85
-
 # identify the ma probability for each cell and then filter if less than the prob_threshold
 results_df <- results_df %>%
   mutate(max_prob = pmax(prob_core, prob_surface),
-         status = ifelse(max_prob >= prob_threshold, "High Confidence", "Ambiguous"))
+         status = ifelse(max_prob >= prediction_params$prob_threshold, "High Confidence", "Ambiguous"))
 
 results_df_filtered <- results_df %>%
   filter(status == "High Confidence")

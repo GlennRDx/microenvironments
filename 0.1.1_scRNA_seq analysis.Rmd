@@ -26,7 +26,6 @@ library(scry) # bioconductor
 library(SingleCellExperiment) # bioconductor
 ```
 
-
 # Load data
 ```{r}
 wts_obj <- readRDS(file = "janesick_2023/raw_clean/wts_obj_clean.RDS")
@@ -241,8 +240,6 @@ saveRDS(wts_obj, file = "janesick_2023/processed/wts_obj.RDS")
 
 
 ```{r}
-n = 1000
-
 # Random subsampling to n cells per cell type
 # extract metadata
 meta <- wts_obj@meta.data %>%
@@ -251,7 +248,7 @@ meta <- wts_obj@meta.data %>%
 set.seed(123)
 sampled_cells <- meta %>%
   group_by(Annotation) %>%
-  slice_sample(n = n) %>%
+  slice_sample(n = wts_params$n_subsamples) %>%
   pull(cell)
 
 # Subset the Seurat object to those cell names
@@ -388,7 +385,7 @@ print(pca_feature_plot)
 
 ```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # t-SNE
-wts_obj <- RunTSNE(wts_obj, dims = 1:15, reduction = "pca", verbose = F) 
+wts_obj <- RunTSNE(wts_obj, dims = wts_params$n_dims, reduction = "pca", verbose = F) 
 
 tsne_plot <- DimPlot(wts_obj, reduction = "tsne", group.by = "Annotation") +
   ggtitle("t-SNE - Cell Type Annotations")
@@ -400,10 +397,10 @@ print(tsne_plot)
 ```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # UMAP
 #calc neighbours
-wts_obj <- FindNeighbors(wts_obj, dims = 1:15, reduction = "pca", verbose = F)
+wts_obj <- FindNeighbors(wts_obj, dims = wts_params$n_dims, reduction = "pca", verbose = F)
 
 # Run UMAP
-wts_obj <- RunUMAP(wts_obj, dims = 1:15, reduction = "pca", verbose = F)
+wts_obj <- RunUMAP(wts_obj, dims = wts_params$n_dims, reduction = "pca", verbose = F)
 
 umap_plot <- DimPlot(wts_obj, reduction = "umap", group.by = "Annotation") +
   ggtitle("UMAP - Cell Type Annotations")

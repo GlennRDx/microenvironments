@@ -16,26 +16,17 @@ knitr::opts_knit$set(root.dir = project_root)
 library(tidyverse)
 library(Seurat)
 library(dplyr)
-
-# Load ISS / scRNA-seq data
-iss_obj_invasive <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/iss_obj_invasive.RDS")
-scRNA_invasive <- readRDS('/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/wts_obj_invasive.RDS')
-
-
-# Load shared genes and training genes
-shared_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/shared_genes.RDS")
-train_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/train_genes.RDS")
-
-# Select classification method
-# classification_method <- "surface_class_clusters"
-classification_method <- "surface_class_radius"
-
-# findmarkers_method <- "wilcox"
-findmarkers_method <- "MAST"
-# findmarkers_method <- "DESeq2"
 ```
 
-# Chunk_1
+```{r}
+# Load data
+iss_obj_invasive <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/iss_obj_invasive.RDS")
+scRNA_invasive <- readRDS('/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/wts_obj_invasive.RDS')
+shared_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/shared_genes.RDS")
+train_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/train_genes.RDS")
+```
+
+# DGE ANALYSIS
 
 ```{r}
 # WTD - FindMarkers Analysis
@@ -59,7 +50,7 @@ markers_WTD <- FindMarkers(
   scRNA_invasive,
   ident.1 = "Surface",
   ident.2 = "Core",
-  test.use = findmarkers_method,
+  test.use = validation_params$marker_method,
   logfc.threshold = 0,  # Test all genes
   min.pct = 0,  # Gene must be expressed in at least 10% of cells in either group
   verbose = TRUE
@@ -102,7 +93,7 @@ markers_ISS <- FindMarkers(
   iss_obj_invasive,
   ident.1 = "Surface",
   ident.2 = "Core",
-  test.use = findmarkers_method,
+  test.use = validation_params$marker_method,
   logfc.threshold = 0,
   min.pct = 0,
   verbose = TRUE
@@ -177,11 +168,8 @@ cat("Validation genes - Pearson r (sig genes):", round(cor_pearson_validation, 3
 
 ```
 
+# PLOTS
 ```{r}
-# ============================================================================
-# Visualization
-# ============================================================================
-
 # Training genes plot
 p1 <- ggplot(comparison_training, aes(x = log2FoldChange_ISS, y = log2FoldChange_WTD)) +
   geom_point(aes(color = both_sig), alpha = 0.6, size = 2) +

@@ -27,29 +27,22 @@ library(cowplot)
 library(paletteer)
 library(scry, quietly = T) # bioconductor
 library(SingleCellExperiment, quietly = T) # bioconductor
+```
 
+```{r}
 # Load data
 iss_expr <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/raw_clean/iss_expr_clean.RDS")
 iss_meta <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/raw_clean/iss_meta_clean.RDS")
 setDT(iss_meta) # Set to data.table for speed
 ```
 
-```{r}
-# Parameters
-R <- 35  # Radius for neighbourhood definition
-K <- 25 # Number of neighbours for KNN method
-center_x <- 3249.27 # random cell x coord
-center_y <- 2027.26 # random cell y coord
-THRESHOLD <- 0.85  # Threshold for Core vs Surface classification
-```
-
 # Plotting function
 ```{r}
 plot_surface_classification <- function(data, colour_col,
                                         show_zoom = FALSE,
-                                        centre_x = NULL,
-                                        centre_y = NULL,
-                                        radius = 50,
+                                        centre_x = iss_params$centre_x,
+                                        centre_y = iss_params$centre_y,
+                                        radius = iss_params$radius,
                                         custom_colours = NULL,
                                         continuous = FALSE,
                                         title = "") {
@@ -140,7 +133,7 @@ start_time <- Sys.time()
 coords <- iss_meta[, .(x_centroid, y_centroid)] #Q: what does the period do?
 
 # 2. Perform radius search (returns the indices)
-nn_result <- nn2(data = coords, query = coords, searchtype = "radius", radius = R, k = 200)
+nn_result <- nn2(data = coords, query = coords, searchtype = "radius", radius = iss_params$radius, k = 200)
 
 # 3. Identify target cell indices (invasice tumour cells)
 invasive_idx <- which(iss_meta$Annotation == "Invasive_Tumor")
@@ -155,7 +148,7 @@ classification_vec <- vapply(invasive_idx, function(i) {
   
   frac <- sum(is_tumour_neighbour[nb_idx]) / length(nb_idx) # Calculate Fraction
   
-  if (frac > THRESHOLD) "Core" else "Surface"
+  if (frac > iss_params$threshold) "Core" else "Surface"
 }, FUN.VALUE = character(1))
 
 # 5. enrich metadata
@@ -196,7 +189,7 @@ plot_surface_classification(
   colour_col = "surface_class_radius",
   centre_x = 3249.27,
   centre_y = 2027.26,
-  radius = R,
+  radius = iss_params$radius,
   show_zoom = T,
   custom_colours = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")
 )
@@ -210,7 +203,7 @@ invasive_idx <- which(iss_meta$Annotation == "Invasive_Tumor")
 coords_all <- as.matrix(iss_meta[, c("x_centroid", "y_centroid")])
 
 # 2. KNN Search
-nn_knn <- nn2(data = coords_all, query = coords_all[invasive_idx,], k = K)
+nn_knn <- nn2(data = coords_all, query = coords_all[invasive_idx,], k = iss_params$knn)
 
 # 3. Calculate Fraction
 is_tumour <- iss_meta$Annotation %in% c("Invasive_Tumor", "Prolif_Invasive_Tumor")
@@ -226,7 +219,7 @@ cat("KNN Classification took:", round(Sys.time() - start_time, 2))
 # 5. Classify
 iss_meta$surface_class_nn <- ifelse(
   is.na(iss_meta$perc_tumours), "Other",
-  ifelse(iss_meta$perc_tumours < THRESHOLD, "Surface", "Core")
+  ifelse(iss_meta$perc_tumours < iss_params$threshold, "Surface", "Core")
 )
 
 table(iss_meta$surface_class_nn)
