@@ -2,14 +2,15 @@
 output:
   pdf_document:
     latex_engine: xelatex
-  html_document:
-    df_print: paged
 geometry: margin=0.2in
 ---
 
-# Packages & setting data directory
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
-knitr::opts_knit$set(root.dir = "/home/glennrdx/Documents/lab_projects/microenvironments/01_data")
+# Load config.R
+source("/home/glennrdx/Documents/lab_projects/microenvironments/02_analysis/config.R") 
+
+# Set root directory using the variable from config
+knitr::opts_knit$set(root.dir = project_root)
 
 # Load libraries
 library(tidyverse) # CRAN
@@ -31,7 +32,7 @@ library(SingleCellExperiment) # bioconductor
 wts_obj <- readRDS(file = "janesick_2023/raw_clean/wts_obj_clean.RDS")
 ```
 
-# QC
+# QUALITY CONTROL
 ### Created: 
 - histogram of count depth
 - Violin plot of MT genes
@@ -278,9 +279,8 @@ sce_deviance <- devianceFeatureSelection(sce, assay = 'counts')
 binomial_deviance <- rowData(sce_deviance)$binomial_deviance
 
 # Select top highly deviant genes
-n_top_genes <- 4000
-highly_deviant_genes <- names(sort(binomial_deviance, decreasing = TRUE)[1:n_top_genes])
-highly_variable <- FindVariableFeatures(wts_obj, assay = 'SCT', selection.method = 'vst', nfeatures = n_top_genes)
+highly_deviant_genes <- names(sort(binomial_deviance, decreasing = TRUE)[1:wts_params$n_top_genes])
+highly_variable <- FindVariableFeatures(wts_obj, assay = 'SCT', selection.method = 'vst', nfeatures = wts_params$n_top_genes)
 highly_variable_genes <- highly_variable@assays$SCT@var.features
 shared_HVG <- intersect(highly_deviant_genes, highly_variable_genes)
 
@@ -355,6 +355,7 @@ ggplot(plot_data, aes(x = means, y = dispersions, color = highly_deviant)) +
 VariableFeatures(wts_obj) <- highly_deviant_genes
 ```
 
+# DIMENSIONALITY REDUCTION & VISUALISATION
 
 ```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # Dimensionality Reduction

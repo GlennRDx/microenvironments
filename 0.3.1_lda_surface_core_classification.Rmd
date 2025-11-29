@@ -2,17 +2,17 @@
 output:
   pdf_document:
     latex_engine: xelatex
-  html_document:
-    df_print: paged
 geometry: margin=0.2in
 ---
-```{r setup, include=FALSE, message = FALSE, warning = FALSE}
-knitr::opts_knit$set(root.dir = "/home/glennrdx/Documents/lab_projects/microenvironments/01_data")
-```
 
-# Libraries, Data, & Parameters
-```{r}
-# Load Libraries
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+# Load config.R
+source("/home/glennrdx/Documents/lab_projects/microenvironments/02_analysis/config.R") 
+
+# Set root directory using the variable from config
+knitr::opts_knit$set(root.dir = project_root)
+
+# Load libraries
 library(MASS)
 library(dplyr)
 library(data.table, quietly = T)
