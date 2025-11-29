@@ -12,6 +12,10 @@ source("/home/glennrdx/Documents/lab_projects/microenvironments/02_analysis/conf
 # Set root directory using the variable from config
 knitr::opts_knit$set(root.dir = data_dir)
 
+# Figures Folder
+fig_subdir <- file.path(figs_dir, "0.1.1_scRNA_seq analysis")
+if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
+
 # Load libraries
 library(tidyverse) # CRAN
 library(Matrix) # CRAN
@@ -46,8 +50,8 @@ wts_obj[["percent.mt"]] <- PercentageFeatureSet(wts_obj, pattern = "^MT-") # cal
 ### 
 ```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # 1. Histogram of nCount_RNA
-ggplot(wts_obj@meta.data, aes(x = nCount_RNA)) +
-  geom_histogram(bins = 150, fill = "steelblue", color = 'black') +
+p1 <- ggplot(wts_obj@meta.data, aes(x = nCount_RNA)) +
+  geom_histogram(bins = 150, fill = "steelblue", color = 'black', linewidth = 0) +
   theme_minimal() +
   labs(title = "Distribution of Total Counts", x = "total counts", y = "Frequency")+
   theme(
@@ -55,22 +59,41 @@ ggplot(wts_obj@meta.data, aes(x = nCount_RNA)) +
     axis.title = element_text(size = 12),
     axis.text  = element_text(size = 11)
   )
+p1
+
+ggsave(
+  filename = file.path(fig_subdir, "p1_dist_total_counts.tiff"),
+  plot = p1,
+  width = 7.87, 
+  height = 6,
+  dpi = 300,
+  compression = "lzw" # Good for TIFF size
+)
 ```
 
 ```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # 2. Violin plot of percentage mitochondrial genes
-ggplot(wts_obj@meta.data, aes(x = Annotation, y = percent.mt, fill = Cancerous)) +
+p2 <- ggplot(wts_obj@meta.data, aes(x = Annotation, y = percent.mt, fill = Cancerous)) +
   geom_violin(trim = FALSE, alpha = 0.7) +
   geom_jitter(width = 0.2, size = 1, shape = 46, alpha = 0.5, color = "black") +  # points in black
   scale_fill_manual(values = c("TRUE" = "#E6893D", "FALSE" = "steelblue")) +
   theme_minimal() +
   labs(x = "Annotation", y = "Percent MT") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave(
+  filename = file.path(fig_subdir, "p2_pct_MT_genes.tiff"),
+  plot = p2,
+  width = 7.87, 
+  height = 6,
+  dpi = 300,
+  compression = "lzw" # Good for TIFF size
+)
 ```
 
 ```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # 3. Scatter plot of three metrics together
-ggplot(wts_obj@meta.data, aes(x = nCount_RNA, y = nFeature_RNA, color = Annotation)) +
+p3 <- ggplot(wts_obj@meta.data, aes(x = nCount_RNA, y = nFeature_RNA, color = Annotation)) +
   geom_point(alpha = 0.6, size = 1) +
   theme_minimal() +
   scale_x_log10() +
@@ -80,6 +103,15 @@ ggplot(wts_obj@meta.data, aes(x = nCount_RNA, y = nFeature_RNA, color = Annotati
         x = 'nCount_RNA',
         y = 'nFeature_RNA',
         color = 'Annotation')
+
+ggsave(
+  filename = file.path(fig_subdir, "p3_seq_depth_vs_num_detected_genes.tiff"),
+  plot = p3,
+  width = 7.87, 
+  height = 6,
+  dpi = 300,
+  compression = "lzw" # Good for TIFF size
+)
 ```
 
 
