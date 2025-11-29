@@ -10,7 +10,7 @@ geometry: margin=0.2in
 source("/home/glennrdx/Documents/lab_projects/microenvironments/02_analysis/config.R") 
 
 # Set root directory using the variable from config
-knitr::opts_knit$set(root.dir = project_root)
+knitr::opts_knit$set(root.dir = data_dir)
 
 # Load libraries
 library(tidyverse, quietly = T) # CRAN
