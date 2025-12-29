@@ -1,4 +1,16 @@
-.Rproj.user
+# R-specific
 .Rhistory
 .RData
-.Ruserdata
+.Rproj.user/
+*.Rproj
+
+# Directories
+01_data/
+03_figures/
+04_literature/
+05_notes/
+06_presentations/
+
+
+# OS-specific
+.DS_Store
