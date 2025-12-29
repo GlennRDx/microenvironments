@@ -7,7 +7,7 @@ geometry: margin=0.2in
 
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
 # Load config.R
-source("/home/glennrdx/Documents/lab_projects/microenvironments/02_analysis/config.R") 
+source("config.R") 
 
 # Set root directory using the variable from config
 knitr::opts_knit$set(root.dir = data_dir)
@@ -35,8 +35,8 @@ library(SingleCellExperiment, quietly = T) # bioconductor
 
 ```{r}
 # Load data
-iss_expr <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/raw_clean/iss_expr_clean.RDS")
-iss_meta <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/raw_clean/iss_meta_clean.RDS")
+iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
+iss_meta <- readRDS("janesick_2023/raw_clean/iss_meta_clean.RDS")
 setDT(iss_meta) # Set to data.table for speed
 ```
 
