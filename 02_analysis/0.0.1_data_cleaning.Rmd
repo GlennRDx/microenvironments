@@ -12,6 +12,10 @@ source("config.R")
 # Set root directory using the variable from config
 knitr::opts_knit$set(root.dir = data_dir)
 
+# Create data directories
+lapply(file.path(data_dir, "janesick_2023", c("raw_clean", "processed")), 
+       dir.create, recursive = TRUE, showWarnings = FALSE)
+
 # Load libraries
 library(tidyverse) # CRAN
 library(Matrix) # CRAN
