@@ -1,6 +1,6 @@
 ## Installation:
 1. Clone repo
-2. Download data files from google drive and place in 01_data/janesick/raw
+2. Download janesick_2023 directory from google drive and place in 01_data/
 
 
 ## Directory and files tree structure:
