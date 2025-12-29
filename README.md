@@ -4,6 +4,7 @@ Installation:
 
 
 Directory and files tree structure:
+´´´bash
 microenvironments  
 ├── 01_data  
 │   ├── processed  
@@ -46,3 +47,4 @@ microenvironments
 │   └── config.R  
 ├── 03_figures  
 └── microenvironments.Rproj  
+´´´
