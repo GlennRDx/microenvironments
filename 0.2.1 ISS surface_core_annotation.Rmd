@@ -49,6 +49,7 @@ plot_surface_classification <- function(data, colour_col,
                                         radius = iss_params$radius,
                                         custom_colours = NULL,
                                         continuous = FALSE,
+                                        base_size = 1,
                                         title = "") {
   
   
@@ -56,20 +57,24 @@ plot_surface_classification <- function(data, colour_col,
   # 1. Main Spatial Plot w/ Classifications (p1)
   p1 <- ggplot(data, aes(x = x_centroid, y = y_centroid)) +
     scale_x_reverse() +
-    coord_fixed() +
     theme_minimal() +
     labs(title = title) +
     theme(
       legend.position = "bottom",
       plot.margin = margin(0,0,0,0),
-      plot.title = element_text(hjust = 0.5, face = "bold")
+      plot.title = element_text(hjust = 0.5, face = "bold", size = 14 * base_size),
+      axis.title = element_text(size = 12 * base_size),
+      axis.text = element_text(size = 10 * base_size),
+      legend.title = element_text(size = 11 * base_size),
+      legend.text = element_text(size = 10 * base_size)
     )
+    
   # Add points (Continuous vs Discrete)
   if (continuous) {
-    p1 <- p1 +geom_point(aes_string(color = colour_col), size = 0.01, alpha = 1, shape = ".") +
+    p1 <- p1 +geom_point(aes_string(color = colour_col), size = 0.01, alpha = 1) +
       scale_color_gradientn(colors = paletteer_c("grDevices::Blue-Red 3", 30), na.value = "grey75")
   } else {
-    p1 <- p1 + geom_point(aes_string(color = colour_col), size = 0.01, alpha = 1, shape = ".") +
+    p1 <- p1 + geom_point(aes_string(color = colour_col), size = 0.01, alpha = 1) +
       guides(color = guide_legend(override.aes = list(shape = 16, size = 3)))
     
     if(!is.null(custom_colours)) {
@@ -104,17 +109,19 @@ plot_surface_classification <- function(data, colour_col,
     theme(
       legend.position = "none", 
       plot.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-      axis.text = element_text(size = 6),
-      plot.title = element_text(size = 8, hjust = 0.5),
-      panel.grid = element_blank()
+      panel.grid = element_blank(),
+      axis.text = element_text(size = 6 * base_size),
+      axis.title = element_text(size = 7 * base_size), # In case labels are added later
+      plot.title = element_text(size = 8 * base_size, hjust = 0.5)
     )
+    
   
   # Add points to inset
    if (continuous) {
-     p2 <- p2 + geom_point(aes_string(color = colour_col), size = 2, alpha = 0.8, shape = 16) +
+     p2 <- p2 + geom_point(aes_string(color = colour_col), size = 2 * base_size, alpha = 0.8, shape = 16) +
        scale_color_gradientn(colors = paletteer_c("grDevices::Blue-Red 3", 30), na.value = "grey75")
    } else {
-     p2 <- p2 + geom_point(aes_string(color = colour_col), size = 2, alpha = 0.8, shape = 16)
+     p2 <- p2 + geom_point(aes_string(color = colour_col), size = 2 * base_size, alpha = 0.8, shape = 16)
       if(!is.null(custom_colours)) {
         p2 <- p2 + scale_color_manual(values = custom_colours, na.value = "grey75")
       }
@@ -181,18 +188,18 @@ p1 <- ggplot(subset(iss_meta, !is.na(neighbour_count)), aes(x = neighbour_count)
   theme_minimal() +
   labs(
     title = "Distribution of Counts of cells with n neighbours within radius",
-    subtitle = paste("Radius =", R, "\nMean n =", round(mean_val, 2)),
+    subtitle = paste("Radius =", iss_params$radius, "\nMean n =", round(mean_val, 2)),
     x = "Number of Neighbours in Radius",
     y = "Count of Cells"
   )
 
 ggsave(
-  filename = file.path(fig_subdir, "p1_dist_of_counts_of_cells_with_n_neighbours_in_radius.tiff"),
+  filename = file.path(fig_subdir, "p1_dist_of_counts_of_cells_with_n_neighbours_in_radius.png"),
   plot = p1,
-  width = 7.87, 
-  height = 6,
   dpi = 300,
-  compression = "lzw" # Good for TIFF size
+  scale = 2,
+  width = 7.87,
+  height = 7
 )
 ```
 
@@ -203,17 +210,19 @@ p2 <- plot_surface_classification(
   centre_x = 3249.27,
   centre_y = 2027.26,
   radius = iss_params$radius,
-  show_zoom = T,
+  show_zoom = F,
   custom_colours = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")
 )
 
+p2
+
 ggsave(
-  filename = file.path(fig_subdir, "p2_ME_annotations_radius_method.tiff"),
+  filename = file.path(fig_subdir, "p2_ME_annotations_radius_method.png"),
   plot = p2,
-  width = 7.87, 
-  height = 6,
   dpi = 300,
-  compression = "lzw" # Good for TIFF size
+  width = 4*7.87,
+  height = 4*6,
+  scale  = 0.5
 )
 ```
 
@@ -248,11 +257,20 @@ table(iss_meta$surface_class_nn)
 ```
 
 ```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
-plot_surface_classification(
+p3 <- plot_surface_classification(
   data = iss_meta,
   colour_col = "surface_class_nn",
   show_zoom = F,
   custom_colours = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")
+)
+
+ggsave(
+  filename = file.path(fig_subdir, "p3_ME_annotations_knn_method.png"),
+  plot = p3,
+  dpi = 300,
+  width = 4*7.87,
+  height = 4*6,
+  scale  = 0.5
 )
 ```
 
@@ -279,10 +297,19 @@ if (any(is_core) && any(is_surface)) {
 summary(iss_meta[iss_meta$surface_class_radius == "Core",]$tumour_depth)
 ```
 ```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
-plot_surface_classification(
+p4 <- plot_surface_classification(
   data = iss_meta,
   colour_col = "tumour_depth",
   continuous = T
+)
+
+ggsave(
+  filename = file.path(fig_subdir, "p4_ME_annotations_depth_method.png"),
+  plot = p4,
+  dpi = 300,
+  width = 4*7.87,
+  height = 4*6,
+  scale  = 0.5
 )
 ```
 
@@ -304,7 +331,7 @@ iss_meta$depth_category[iss_meta$surface_class_radius == "Core" & iss_meta$tumou
 table(iss_meta$depth_category)
 ```
 ```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
-plot_surface_classification(
+p5 <- plot_surface_classification(
   data = iss_meta,
   colour_col = "depth_category",
   continuous = FALSE,
@@ -315,6 +342,15 @@ plot_surface_classification(
     "Other" = "grey75"
   ),
   title = "Highlighting Shallow Core Cells (Depth ≤ 5)"
+)
+
+ggsave(
+  filename = file.path(fig_subdir, "p5_identify_shallow_core_cells.png"),
+  plot = p5,
+  dpi = 300,
+  width = 4*7.87,
+  height = 4*6,
+  scale  = 0.5
 )
 ```
 
@@ -335,7 +371,7 @@ iss_obj_invasive <- iss_obj_invasive %>%
   RunUMAP(dims = 1:10)
 
 # 3. Visualise Clusters
-DimPlot(iss_obj_invasive, label = F) +
+p6 <- DimPlot(iss_obj_invasive, label = F) +
   scale_color_viridis_d(option = "turbo") +
   ggtitle("Leiden Clustering")
 
@@ -346,10 +382,19 @@ iss_meta$cluster <- as.character(cluster_map[match(iss_meta$cell_id, names(clust
 # 5. classify based on clusters (manual hard-code annotation)
 iss_meta <- iss_meta %>%
   mutate(surface_class_clusters = case_when(
-    cluster %in% c("1", "2") ~ "core",
+    cluster %in% c("1", "2") ~ "Core",
     cluster %in% c("3") ~ "Surface",
     TRUE ~ NA_character_
   ))
+
+ggsave(
+  filename = file.path(fig_subdir, "p6_leiden_cluster_tumour_cells.png"),
+  plot = p6,
+  dpi = 300,
+  width = 7.87,
+  height = 6,
+  scale  = 0.5
+)
 ```
 ```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
 # Get turbo colour palette
@@ -358,9 +403,18 @@ n_clusters <- length(clusters)
 turbo_cols <- viridis::viridis_pal(option = "turbo")(n_clusters)
 names(turbo_cols) <- clusters
 
-plot_surface_classification(data = iss_meta,
+p7 <- plot_surface_classification(data = iss_meta,
                             colour_col = "cluster",
                             custom_colours = turbo_cols)
+
+ggsave(
+  filename = file.path(fig_subdir, "p7_ME_annotations_cluster_method.png"),
+  plot = p7,
+  dpi = 300,
+  width = 4*7.87,
+  height = 4*6,
+  scale  = 0.5
+)
 ```
 
 

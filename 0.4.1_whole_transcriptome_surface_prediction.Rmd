@@ -143,21 +143,66 @@ print(table(results_df_filtered$predicted_class))
 ```
 
 ```{r}
-# Plot LDA projection for scRNA-seq predictions
-# Use results_df (all predictions) to show the full distribution
-ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
-  geom_density(alpha = 0.5) +
-  geom_vline(xintercept = c(-0.4, 0), linetype = "dashed", color = "black") +
-  annotate("text", x = -1.5, y = 0.4, label = "High confidence\nCore", size = 3) +
-  annotate("text", x = 2.5, y = 0.4, label = "High confidence\nSurface", size = 3) +
-  annotate("text", x = 0.25, y = 0.5, label = "Ambiguous\nregion", size = 3, color = "gray30") +
-  theme_minimal() +
-  labs(title = "LDA Projection of scRNA-seq Predictions", 
-       x = "LD1", 
-       y = "Density",
-       fill = "Predicted Class")
+# --- Define Figure Directory ---
+fig_subdir <- file.path(figs_dir, "0.4.1")
+if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
 
-# hard coded cut offs may be the problem
+# --- Prepare Stats for Plot Labels ---
+# Count stats from the full results_df
+n_high_conf_core <- sum(results_df$predicted_class == "Core" & results_df$status == "High Confidence")
+n_high_conf_surf <- sum(results_df$predicted_class == "Surface" & results_df$status == "High Confidence")
+n_ambiguous <- sum(results_df$status == "Ambiguous")
+
+# Create a stats label string
+stats_label <- paste0(
+  "High Conf. Core: ", n_high_conf_core, "\n",
+  "High Conf. Surface: ", n_high_conf_surf, "\n",
+  "Ambiguous: ", n_ambiguous
+)
+
+# Define readable labels for the config settings (same as previous script)
+method_labels <- c(
+  "surface_class_radius"   = "Radius Definition",
+  "surface_class_nn"       = "KNN Definition",
+  "surface_class_clusters" = "Unsupervised Clustering"
+)
+current_label <- method_labels[classification_method]
+if(is.na(current_label)) current_label <- classification_method
+
+# --- Generate Plot ---
+p_pred <- ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
+  geom_density(alpha = 0.5) +
+  # Add lines for visual reference (you might want to adjust x-intercepts based on your data distribution)
+  geom_vline(xintercept = c(-1.0, 1.5), linetype = "dashed", color = "black", alpha=0.5) +
+  
+  # Add the stats box
+  annotate("label", x = Inf, y = Inf, label = stats_label, 
+           hjust = 1.1, vjust = 1.1, size = 3.5, 
+           fill = "white", alpha = 0.8, color = "black") +
+  
+  theme_minimal() +
+  labs(
+    title = "LDA Projection of scRNA-seq Predictions", 
+    subtitle = paste0("Model Trained on: ", current_label),
+    x = "LD1", 
+    y = "Density",
+    fill = "Predicted Class"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 12),
+    plot.subtitle = element_text(size = 10, color = "gray30")
+  )
+
+# Print and Save
+print(p_pred)
+
+ggsave(
+  filename = file.path(fig_subdir, paste0("scRNA_LDA_projection_", classification_method, ".png")),
+  plot = p_pred,
+  dpi = 300,
+  width = 8,
+  height = 6
+)
 ```
 
 # Use results_df (all predictions) to show the full distribution

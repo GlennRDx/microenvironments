@@ -41,15 +41,17 @@ saveRDS(train_genes, file = "janesick_2023/processed/train_genes.RDS")
 - Cells labelled shallow core
 - Cells labelled dead/dying cells (NAs in surface_classification_clusters)
 ```{r}
-# #calc number of cells before filt.
-# n_before <- ncol(iss_obj_invasive)
-# 
-# # filter out cells
-# iss_obj_invasive <- subset(iss_obj_invasive, subset = depth_category != "Shallow Core" & !is.na(surface_class_clusters))
-# 
-# n_after <- ncol(iss_obj_invasive)
-# 
-# cat(round((n_before - n_after)/n_before, 2)*100, "% cells removed.")
+#calc number of cells before filt.
+n_before <- ncol(iss_obj_invasive)
+
+# filter out cells
+# iss_obj_invasive <- subset(iss_obj_invasive, subset = depth_category != "Shallow Core")
+
+iss_obj_invasive <- subset(iss_obj_invasive, subset = !is.na(surface_class_clusters))
+
+n_after <- ncol(iss_obj_invasive)
+
+cat(round((n_before - n_after)/n_before, 2)*100, "% cells removed.")
 ```
 
 
@@ -156,14 +158,52 @@ saveRDS(fit_lda, file = "janesick_2023/processed/fit_lda.RDS")
 
 # Plot first two linear discriminants
 ```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
+# Define figure directory based on your request
+fig_subdir <- file.path(figs_dir, "0.3.1")
+if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
+
+# Calculate LDA values
 lda_values <- predict(fit_lda)$x
 lda_df <- data.frame(LD1 = lda_values[,1], surface_class = inv_gene_exp_filtered$surface_class)
 
-ggplot(lda_df, aes(x = LD1, fill = surface_class)) +
+# Define readable labels for the config settings
+method_labels <- c(
+  "surface_class_radius"   = "Radius Definition",
+  "surface_class_nn"       = "KNN Definition",
+  "surface_class_clusters" = "Unsupervised Clustering"
+)
+
+# Get the nice label for the current run
+current_label <- method_labels[classification_method]
+if(is.na(current_label)) current_label <- classification_method
+
+# Create the plot
+p_lda <- ggplot(lda_df, aes(x = LD1, fill = surface_class)) +
   geom_density(alpha = 0.5) +
   theme_minimal() +
-  labs(title = "LDA Projection of Surface vs Core Cells", x = "LD1", y = "Density")
+  labs(
+    title = "LDA Projection of Surface vs Core Cells", 
+    subtitle = paste0("Ground Truth Annotation: ", current_label),
+    x = "LD1", 
+    y = "Density",
+    fill = "Region"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 12),
+    plot.subtitle = element_text(size = 10, color = "gray30")
+  )
 
+# Print the plot to the Rmarkdown output
+print(p_lda)
+
+# Save the plot to the specific folder
+ggsave(
+  filename = file.path(fig_subdir, paste0("LDA_density_", classification_method, ".png")),
+  plot = p_lda,
+  dpi = 300,
+  width = 8,
+  height = 6
+)
 ```
 
 # Predict surface_class with LDA model
@@ -187,12 +227,37 @@ print(paste("Test Accuracy:", round(accuracy, 3)))
 ```
 
 ```{r}
-# Create confusion matrix
+# --- Predict surface_class with LDA model ---
+
+# Subset test data to only include genes used in the LDA model
+inv_gene_exp_test_filtered <- inv_gene_exp_test %>%
+  dplyr::select(surface_class, all_of(genes_to_keep))
+
+# Predict surface_class for test data
+lda_predictions <- predict(fit_lda, newdata = inv_gene_exp_test_filtered)
+
+# Add predictions to dataframe
+inv_gene_exp_test$predicted_surface_class <- lda_predictions$class
+predicted_classes <- lda_predictions$class
+
+# Calculate Accuracy
+accuracy <- mean(predicted_classes == inv_gene_exp_test$surface_class)
+print(paste("Test Accuracy:", round(accuracy, 3)))
+
+# --- Generate and Save Confusion Matrix ---
+
+# Create confusion matrix object
 conf_matrix <- confusionMatrix(
   factor(predicted_classes),
   factor(inv_gene_exp_test$surface_class)
 )
 
-# Print confusion matrix and stats
+# Print to Rmarkdown
 print(conf_matrix)
+
+# Save the full confusion matrix output to a text file
+capture.output(
+  conf_matrix, 
+  file = file.path(fig_subdir, paste0("confusion_matrix_", classification_method, ".txt"))
+)
 ```

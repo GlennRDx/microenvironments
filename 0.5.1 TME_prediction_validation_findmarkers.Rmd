@@ -140,11 +140,11 @@ cat("Validation genes:", sum(!comparison_full$training_gene), "\n\n")
 comparison_training <- comparison_full %>% filter(training_gene == TRUE)
 comparison_validation <- comparison_full %>% filter(training_gene == FALSE)
 
-# Get only mutually significant genes
-comparisons_training_sig <- comparison_training %>%
-  filter(both_sig == "Significant / Significant")
-comparisons_validation_sig <- comparison_validation %>%
-  filter(both_sig == "Significant / Significant")
+# # Get only mutually significant genes
+# comparisons_training_sig <- comparison_training %>%
+#   filter(both_sig == "Significant / Significant")
+# comparisons_validation_sig <- comparison_validation %>%
+#   filter(both_sig == "Significant / Significant")
 ```
 
 ```{r}
@@ -152,16 +152,16 @@ comparisons_validation_sig <- comparison_validation %>%
 
 # Training genes correlation
 cor_pearson_training <- cor(
-  comparisons_training_sig$log2FoldChange_ISS,
-  comparisons_training_sig$log2FoldChange_WTD,
+  comparison_training$log2FoldChange_ISS,
+  comparison_training$log2FoldChange_WTD,
   use = "complete.obs"
 )
 cat("Training genes - Pearson r (sig genes):", round(cor_pearson_training, 3), "\n")
 
 # Validation genes correlation
 cor_pearson_validation <- cor(
-  comparisons_validation_sig$log2FoldChange_ISS,
-  comparisons_validation_sig$log2FoldChange_WTD,
+  comparison_validation$log2FoldChange_ISS,
+  comparison_validation$log2FoldChange_WTD,
   use = "complete.obs"
 )
 cat("Validation genes - Pearson r (sig genes):", round(cor_pearson_validation, 3), "\n")
@@ -170,24 +170,37 @@ cat("Validation genes - Pearson r (sig genes):", round(cor_pearson_validation, 3
 
 # PLOTS
 ```{r}
-# Training genes plot
+# --- Define Figure Directory ---
+fig_subdir <- file.path(figs_dir, "0.5.1")
+if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
+
+# --- Define Readable Labels ---
+method_labels <- c(
+  "surface_class_radius"   = "Radius",
+  "surface_class_nn"       = "KNN",
+  "surface_class_clusters" = "Cluster"
+)
+current_label <- method_labels[classification_method]
+if(is.na(current_label)) current_label <- classification_method
+
+# --- Plot 1: Training Genes ---
 p1 <- ggplot(comparison_training, aes(x = log2FoldChange_ISS, y = log2FoldChange_WTD)) +
   geom_point(aes(color = both_sig), alpha = 0.6, size = 2) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
   geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "blue") +
   scale_color_manual(values = c(
-    "Not Significant / Not Significant" = "gray70",
-    "Significant / Not Significant" = "orange",
-    "Not Significant / Significant" = "purple",
+    "Not_Significant / Not_Significant" = "gray70",
+    "Significant / Not_Significant" = "orange",
+    "Not_Significant / Significant" = "purple",
     "Significant / Significant" = "red"
   )) +
   labs(
-    title = "FindMarkers Results: ISS vs WTD TRAINING GENES",
+    title = paste0("Training Genes: ISS vs scRNA-seq (", current_label, ")"),
     subtitle = paste0("Pearson r = ", round(cor_pearson_training, 3),
-                     " (n=", nrow(comparisons_training_sig), " mutually sig)"),
+                      " (n=", nrow(comparison_training), " genes)"),
     x = "log2 Fold Change (ISS)",
-    y = "log2 Fold Change (WTD)",
+    y = "log2 Fold Change (scRNA-seq)",
     color = "Significance Status"
   ) +
   theme_bw() +
@@ -195,29 +208,45 @@ p1 <- ggplot(comparison_training, aes(x = log2FoldChange_ISS, y = log2FoldChange
 
 print(p1)
 
-# Validation genes plot
+ggsave(
+  filename = file.path(fig_subdir, paste0("DGE_correlation_TRAINING_", classification_method, ".png")),
+  plot = p1,
+  dpi = 300,
+  width = 7,
+  height = 7
+)
+
+# --- Plot 2: Validation Genes ---
 p2 <- ggplot(comparison_validation, aes(x = log2FoldChange_ISS, y = log2FoldChange_WTD)) +
   geom_point(aes(color = both_sig), alpha = 0.6, size = 2) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
   geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "blue") +
   scale_color_manual(values = c(
-    "Not Significant / Not Significant" = "gray70",
-    "Significant / Not Significant" = "orange",
-    "Not Significant / Significant" = "purple",
+    "Not_Significant / Not_Significant" = "gray70",
+    "Significant / Not_Significant" = "orange",
+    "Not_Significant / Significant" = "purple",
     "Significant / Significant" = "red"
   )) +
   labs(
-    title = "FindMarkers Results: ISS vs WTD VALIDATION GENES",
+    title = paste0("Validation Genes: ISS vs scRNA-seq (", current_label, ")"),
     subtitle = paste0("Pearson r = ", round(cor_pearson_validation, 3),
-                     " (n=", nrow(comparisons_validation_sig), " mutually sig)"),
+                      " (n=", nrow(comparison_validation), " genes)"),
     x = "log2 Fold Change (ISS)",
-    y = "log2 Fold Change (WTD)",
+    y = "log2 Fold Change (scRNA-seq)",
     color = "Significance Status"
   ) +
   theme_bw() +
   theme(legend.position = "bottom")
 
 print(p2)
+
+ggsave(
+  filename = file.path(fig_subdir, paste0("DGE_correlation_VALIDATION_", classification_method, ".png")),
+  plot = p2,
+  dpi = 300,
+  width = 7,
+  height = 7
+)
 ```
 

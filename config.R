@@ -1,9 +1,10 @@
 # Paths and directories
-data_dir <- "/home/glennrdx/Documents/lab_projects/microenvironments/01_data"
-figs_dir   <- "/home/glennrdx/Documents/lab_projects/microenvironments/03_figures"
+root_dir <- "/Users/glero527/Documents/microenvironments"
+data_dir <- file.path(root_dir, "01_data")
+figs_dir <- file.path(root_dir, "03_figures")
 
 # General parameters
-classification_method <- "surface_class_radius" # Options: "surface_class_nn", "surface_class_clusters", "surface_class_radius"
+classification_method <- "surface_class_nn" # Options: "surface_class_nn", "surface_class_clusters", "surface_class_radius"
 
 # 0.1.1
 wts_params <- list(
