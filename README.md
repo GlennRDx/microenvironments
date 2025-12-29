@@ -5,7 +5,7 @@
 
 ## Directory and files tree structure:
 ```bash
-microenvironments  
+microenvironments test  
 ├── 01_data  
 │   ├── processed  
 │   │   ├── fit_lda.RDS  
