@@ -1,6 +1,6 @@
 ## Installation:
 1. Clone repo
-2. Download "01_data" from google drive and place in repo
+2. Download data files from google drive and place in 01_data/janesick/raw
 
 
 ## Directory and files tree structure:
