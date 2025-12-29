@@ -7,7 +7,7 @@ geometry: margin=0.2in
 
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
 # Load config.R
-source("/home/glennrdx/Documents/lab_projects/microenvironments/02_analysis/config.R") 
+source("config.R") 
 
 # Set root directory using the variable from config
 knitr::opts_knit$set(root.dir = data_dir)
@@ -20,10 +20,10 @@ library(dplyr)
 
 ```{r}
 # Load data
-iss_obj_invasive <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/iss_obj_invasive.RDS")
-scRNA_invasive <- readRDS('/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/wts_obj_invasive.RDS')
-shared_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/shared_genes.RDS")
-train_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/train_genes.RDS")
+iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
+scRNA_invasive <- readRDS('janesick_2023/processed/wts_obj_invasive.RDS')
+shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
+train_genes <- readRDS("janesick_2023/processed/train_genes.RDS")
 ```
 
 # DGE ANALYSIS

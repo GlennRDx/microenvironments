@@ -7,7 +7,7 @@ geometry: margin=0.2in
 
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
 # Load config.R
-source("/home/glennrdx/Documents/lab_projects/microenvironments/02_analysis/config.R") 
+source("config.R") 
 
 # Set root directory using the variable from config
 knitr::opts_knit$set(root.dir = data_dir)
@@ -34,7 +34,7 @@ genes_to_keep <- readRDS("janesick_2023/processed/genes_to_keep.RDS")
 # Create new WTS object with quantile matched data
 
 ```{r}
-wts_expr_clean <- fread("janesick_2023/processed/scRNAseq_data_quantile_matched.txt") %>% as.data.frame()
+wts_expr_clean <- fread("janesick_2023/raw/scRNAseq_data_quantile_matched.txt") %>% as.data.frame()
 rownames(wts_expr_clean) <- wts_expr_clean$V1
 wts_expr_clean$V1 <- NULL
 

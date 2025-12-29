@@ -7,7 +7,7 @@ geometry: margin=0.2in
 
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
 # Load config.R
-source("/home/glennrdx/Documents/lab_projects/microenvironments/02_analysis/config.R") 
+source("config.R") 
 
 # Set root directory using the variable from config
 knitr::opts_knit$set(root.dir = data_dir)
@@ -30,8 +30,8 @@ library(DESeq2) # bioconductor
 # classification_method <- "surface_class_nn"
 classification_method <- "surface_class_clusters"
 
-shared_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/shared_genes.RDS")
-train_genes <- readRDS("/home/glennrdx/Documents/lab_projects/microenvironments/01_data/janesick_2023/processed/train_genes.RDS")
+shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
+train_genes <- readRDS("janesick_2023/processed/train_genes.RDS")
 ```
 
 # Validation Process:
