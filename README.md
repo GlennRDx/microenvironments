@@ -1,9 +1,9 @@
-Installation:
+## Installation:
 1. Clone repo
 2. Download "01_data" from google drive and place in repo
 
 
-Directory and files tree structure:
+## Directory and files tree structure:
 ```bash
 microenvironments  
 ├── 01_data  
