@@ -42,11 +42,11 @@ microenvironments.
 │   ├── 0.3.1_lda_surface_core_classification.Rmd
 │   ├── 0.4.1_whole_transcriptome_surface_prediction.Rmd
 │   ├── 0.5.1_TME_prediction_validation.Rmd
-│   ├── 0.6.1_GO enrichment.Rmd
 │   ├── Archive
 │   │   ├── 0.3.2_svr_model.Rmd
 │   │   ├── 0.3.3_random_forest_test.Rmd
-│   │   └── 0.5.2_TME_prediction_validation_DESeq2.Rmd
+│   │   ├── 0.5.2_TME_prediction_validation_DESeq2.Rmd
+│   │   └── 0.6.1_GO enrichment.Rmd
 │   └── config.R
 ├── 03_figures
 ├── README.md
