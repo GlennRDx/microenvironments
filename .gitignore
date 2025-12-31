@@ -1,6 +1,7 @@
 # R-specific
 .Rhistory
 .RData
+.RDataTmp
 .Rproj.user/
 *.Rproj
 
@@ -12,6 +13,8 @@
 05_notes/
 06_presentations/
 
+# Files
+02_analysis/0.6.1_GO enrichment.Rmd
 
 # OS-specific
 .DS_Store
