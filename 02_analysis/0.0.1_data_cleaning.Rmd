@@ -16,6 +16,9 @@ knitr::opts_knit$set(root.dir = data_dir)
 lapply(file.path(data_dir, "janesick_2023", c("raw_clean", "processed")), 
        dir.create, recursive = TRUE, showWarnings = FALSE)
 
+# Create figures directory
+dir.create("../03_figures", showWarnings = FALSE)
+
 # Load libraries
 library(tidyverse) # CRAN
 library(Matrix) # CRAN
