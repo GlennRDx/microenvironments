@@ -151,20 +151,20 @@ comparison_validation <- comparison_full %>% filter(training_gene == FALSE)
 # Correlation Analysis
 
 # Training genes correlation
-cor_pearson_training <- cor(
+cor_spearman_training <- cor(
   comparison_training$log2FoldChange_ISS,
   comparison_training$log2FoldChange_WTD,
   use = "complete.obs"
 )
-cat("Training genes - Pearson r (sig genes):", round(cor_pearson_training, 3), "\n")
+cat("Training genes - Spearman rho (sig genes):", round(cor_spearman_training, 3), "\n")
 
 # Validation genes correlation
-cor_pearson_validation <- cor(
+cor_spearman_validation <- cor(
   comparison_validation$log2FoldChange_ISS,
   comparison_validation$log2FoldChange_WTD,
   use = "complete.obs"
 )
-cat("Validation genes - Pearson r (sig genes):", round(cor_pearson_validation, 3), "\n")
+cat("Validation genes - Spearman rho (sig genes):", round(cor_spearman_validation, 3), "\n")
 
 ```
 
@@ -197,7 +197,7 @@ p1 <- ggplot(comparison_training, aes(x = log2FoldChange_ISS, y = log2FoldChange
   )) +
   labs(
     title = paste0("Training Genes: ISS vs scRNA-seq (", current_label, ")"),
-    subtitle = paste0("Pearson r = ", round(cor_pearson_training, 3),
+    subtitle = paste0("Spearman rho = ", round(cor_spearman_training, 3),
                       " (n=", nrow(comparison_training), " genes)"),
     x = "log2 Fold Change (ISS)",
     y = "log2 Fold Change (scRNA-seq)",
@@ -230,7 +230,7 @@ p2 <- ggplot(comparison_validation, aes(x = log2FoldChange_ISS, y = log2FoldChan
   )) +
   labs(
     title = paste0("Validation Genes: ISS vs scRNA-seq (", current_label, ")"),
-    subtitle = paste0("Pearson r = ", round(cor_pearson_validation, 3),
+    subtitle = paste0("Spearman rho = ", round(cor_spearman_validation, 3),
                       " (n=", nrow(comparison_validation), " genes)"),
     x = "log2 Fold Change (ISS)",
     y = "log2 Fold Change (scRNA-seq)",
