@@ -203,27 +203,19 @@ ggsave(
 )
 ```
 
-```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
-p2 <- plot_surface_classification(
-  data = iss_meta,
-  colour_col = "surface_class_radius",
-  centre_x = 3249.27,
-  centre_y = 2027.26,
-  radius = iss_params$radius,
-  show_zoom = F,
-  custom_colours = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")
-)
-
-p2
-
-ggsave(
-  filename = file.path(fig_subdir, "p2_ME_annotations_radius_method.png"),
-  plot = p2,
-  dpi = 300,
-  width = 4*7.87,
-  height = 4*6,
-  scale  = 0.5
-)
+```{r, fig.width=7.87*2, fig.height = 6.5*2, dpi=300, dev='tiff', out.width='100%'}
+ggplot(iss_meta, aes(x = x_centroid, y = y_centroid, color = surface_class_radius)) +
+    # Layer 1: Plot only "Other" first
+    geom_point(data = subset(iss_meta, surface_class_radius == "Other"), 
+               size = 0.01) +
+    # Layer 2: Plot everything else on top
+    geom_point(data = subset(iss_meta, surface_class_radius != "Other"), 
+               size = 0.01) +
+    scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")) +
+    coord_fixed() +
+    scale_x_reverse() + 
+    theme_minimal() +
+    guides(color = guide_legend(override.aes = list(size = 1)))
 ```
 
 
@@ -272,6 +264,21 @@ ggsave(
   height = 4*6,
   scale  = 0.5
 )
+```
+
+```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
+ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_nn)) +
+    # Layer 1: Plot only "Other" first
+    geom_point(data = subset(iss_meta, surface_class_nn == "Other"), 
+               size = 0.01) +
+    # Layer 2: Plot everything else on top
+    geom_point(data = subset(iss_meta, surface_class_nn != "Other"), 
+               size = 0.01) +
+    scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")) +
+    # Swap xlim to ylim and apply reversal to the new y-axis
+    coord_fixed(ylim = c(3850, 0)) +
+    theme_minimal() +
+    guides(color = guide_legend(override.aes = list(size = )))
 ```
 
 # METHOD 3: TUMOUR CELL DEPTH GRADIENT
@@ -330,6 +337,7 @@ iss_meta$depth_category[iss_meta$surface_class_radius == "Core" & iss_meta$tumou
 # Check the counts
 table(iss_meta$depth_category)
 ```
+
 ```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
 p5 <- plot_surface_classification(
   data = iss_meta,
@@ -352,6 +360,26 @@ ggsave(
   height = 4*6,
   scale  = 0.5
 )
+```
+
+```{r}
+table(iss_meta$depth_category)
+```
+
+
+```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
+ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = depth_category)) +
+    # Layer 1: Plot only "Other" first
+    geom_point(data = subset(iss_meta, surface_class_nn == "Other"), 
+               size = 0.01) +
+    # Layer 2: Plot everything else on top
+    geom_point(data = subset(iss_meta, surface_class_nn != "Other"), 
+               size = 0.01) +
+    scale_color_manual(values = c("Surface" = "#C90065", "Deep Core" = "#fac0da", "Shallow Core" = "darkblue", "Other" = "grey75")) +
+    # Swap xlim to ylim and apply reversal to the new y-axis
+    coord_fixed(ylim = c(3850, 0)) +
+    theme_minimal() +
+    guides(color = guide_legend(override.aes = list(size = 2)))
 ```
 
 # METHOD 4: GENE EXPRESSION CLUSTERING

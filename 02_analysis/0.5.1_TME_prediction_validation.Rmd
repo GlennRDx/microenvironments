@@ -26,16 +26,27 @@ shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
 train_genes <- readRDS("janesick_2023/processed/train_genes.RDS")
 ```
 
+```{r}
+table(iss_obj_invasive$surface_class_clusters)
+
+counts.mat.ISS <- GetAssayData(iss_obj_invasive, assay = "RNA", layer = "data")
+counts.mat.WTD <- GetAssayData(scRNA_invasive, assay = "RNA", layer = "data")
+
+head(counts.mat.ISS)
+head(counts.mat.WTD)
+```
+
+
 # DGE ANALYSIS
 
 ```{r}
 # WTD - FindMarkers Analysis
 
-# Normalize data if not already done
-if (!"data" %in% Layers(scRNA_invasive[["RNA"]]) || 
-    length(LayerData(scRNA_invasive, assay = "RNA", layer = "data")) == 0) {
-  scRNA_invasive <- NormalizeData(scRNA_invasive)
-}
+# # Normalize data if not already done
+# if (!"data" %in% Layers(scRNA_invasive[["RNA"]]) || 
+#     length(LayerData(scRNA_invasive, assay = "RNA", layer = "data")) == 0) {
+#   scRNA_invasive <- NormalizeData(scRNA_invasive)
+# }
 
 genes_to_test <- intersect(rownames(scRNA_invasive), shared_genes)
 cat("Genes to test:", length(genes_to_test), "\n")
@@ -48,6 +59,7 @@ Idents(scRNA_invasive) <- scRNA_invasive$predicted_surface_class
 # This tests Surface against Core (positive log2FC = higher in Surface)
 markers_WTD <- FindMarkers(
   scRNA_invasive,
+  slot = "counts",
   ident.1 = "Surface",
   ident.2 = "Core",
   test.use = validation_params$marker_method,
@@ -73,11 +85,14 @@ cat("Significant genes (padj < 0.05):", sum(res_WTD$padj_WTD < 0.05, na.rm = TRU
 ```{r}
 # ISS - FindMarkers Analysis
 
-# Normalize data if not already done
-if (!"data" %in% Layers(iss_obj_invasive[["RNA"]]) || 
-    length(LayerData(iss_obj_invasive, assay = "RNA", layer = "data")) == 0) {
-  iss_obj_invasive <- NormalizeData(iss_obj_invasive)
-}
+# # Normalize data if not already done
+# if (!"data" %in% Layers(iss_obj_invasive[["RNA"]]) || 
+#     length(LayerData(iss_obj_invasive, assay = "RNA", layer = "data")) == 0) {
+#   iss_obj_invasive <- NormalizeData(iss_obj_invasive)
+# }
+
+# add 1 to each gene count to prevent the error: Error in estimateSizeFactorsForMatrix(counts(object), locfunc = locfunc,  : every gene contains at least one zero, cannot compute log geometric means
+# iss_obj_invasive[["RNA"]]$counts <- as.matrix(iss_obj_invasive[["RNA"]]$counts)+1
 
 # Filter to shared genes BEFORE analysis
 genes_to_test <- intersect(rownames(iss_obj_invasive), shared_genes)
@@ -91,6 +106,7 @@ Idents(iss_obj_invasive) <- iss_obj_invasive@meta.data[[classification_method]]
 # Run FindMarkers: Surface vs Core
 markers_ISS <- FindMarkers(
   iss_obj_invasive,
+  slot = "counts",
   ident.1 = "Surface",
   ident.2 = "Core",
   test.use = validation_params$marker_method,
