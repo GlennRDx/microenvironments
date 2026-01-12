@@ -59,7 +59,6 @@ Idents(scRNA_invasive) <- scRNA_invasive$predicted_surface_class
 # This tests Surface against Core (positive log2FC = higher in Surface)
 markers_WTD <- FindMarkers(
   scRNA_invasive,
-  slot = "counts",
   ident.1 = "Surface",
   ident.2 = "Core",
   test.use = validation_params$marker_method,

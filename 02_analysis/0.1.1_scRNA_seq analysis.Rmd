@@ -272,73 +272,81 @@ saveRDS(wts_obj, file = "janesick_2023/processed/wts_obj.RDS")
 
 
 ```{r}
-# Random subsampling to n cells per cell type
-# extract metadata
-meta <- wts_obj@meta.data %>%
-  rownames_to_column(var = 'cell')
-
-set.seed(123)
-sampled_cells <- meta %>%
-  group_by(Annotation) %>%
-  slice_sample(n = wts_params$n_subsamples) %>%
-  pull(cell)
-
-# Subset the Seurat object to those cell names
-wts_obj <- subset(wts_obj, cells = sampled_cells)
+# # Random subsampling to n cells per cell type
+# # extract metadata
+# meta <- wts_obj@meta.data %>%
+#   rownames_to_column(var = 'cell')
+# 
+# set.seed(123)
+# sampled_cells <- meta %>%
+#   group_by(Annotation) %>%
+#   slice_sample(n = wts_params$n_subsamples) %>%
+#   pull(cell)
+# 
+# # Subset the Seurat object to those cell names
+# wts_obj <- subset(wts_obj, cells = sampled_cells)
 ```
 
 
 ```{r}
 # Normalisation
-wts_obj <- SCTransform(wts_obj, verbose = F) # not sure if necessary to regress out pct mt variable
+wts_obj <- NormalizeData(wts_obj)
+wts_obj <- ScaleData(wts_obj, features = VariableFeatures(wts_obj))
+# wts_obj <- SCTransform(wts_obj)
 head(GetAssayData(wts_obj, layer = "data")) # confirm normalised
 ```
+```{r}
+# Feature Selection (Binomial Deviance)
 
+# Convert Seurat object to single cell experiment (SCE) for compatibility with scry
+sce <- as.SingleCellExperiment(wts_obj, assay = 'RNA')
 
-```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
-# Feature selection
+# Calculate the binomial deviance (of each gene?) - use counts layer (raw counts) as the deviance is modeled on raw integer counts
+sce <- devianceFeatureSelection(sce, assay = "counts")
 
-# Convert Seurat object to a SCE object
-sce <- Seurat::as.SingleCellExperiment(wts_obj, assay = "SCT")
+# Extract deviance values and rank genes (Higher deviance = more deviation from the Null mode i.e. more biologically informative)
+bin_dev <- rowData(sce)$binomial_deviance
+names(bin_dev) <- rownames(sce)
 
-# Calculate deviance feature selection
-sce_deviance <- devianceFeatureSelection(sce, assay = 'counts')
+# Add deviance values to the Seurat Assay metadata (using the [[]]) on the assay ensures compatibility with Seurat v4 and v5
+wts_obj[["RNA"]][["binomial_deviance"]] <- bin_dev
 
-# Extract binomial deviance values
-binomial_deviance <- rowData(sce_deviance)$binomial_deviance
+# Rank and select the top 4000 deviant genes
+top_4000 <- names(sort(binomial_deviance, decreasing = TRUE)[1:4000])
 
-# Select top highly deviant genes
-highly_deviant_genes <- names(sort(binomial_deviance, decreasing = TRUE)[1:wts_params$n_top_genes])
-highly_variable <- FindVariableFeatures(wts_obj, assay = 'SCT', selection.method = 'vst', nfeatures = wts_params$n_top_genes)
-highly_variable_genes <- highly_variable@assays$SCT@var.features
-shared_HVG <- intersect(highly_deviant_genes, highly_variable_genes)
+# Create the logical vector for the top 4000 genes
+is_deviant <- rownames(wts_obj) %in% top_4000
 
-# Add deviance information to the Seurat object
-# add binomial deviance scores to meta.data
-wts_obj[["SCT"]]@meta.features$binomial_deviance <- binomial_deviance[rownames(wts_obj)]
+# Name the logical vector so Seurat can map it to the features
+names(is_deviant) <- rownames(wts_obj)
 
-# Create a logical vector for the highly deviant genes
-highly_deviant_logical <- rownames(wts_obj) %in% highly_deviant_genes
-wts_obj[["SCT"]]@meta.features$highly_deviant <- highly_deviant_logical
+# Assign the logical vector to the Seurat object
+wts_obj[["RNA"]][["highly_deviant"]] <- is_deviant
 
-# Create a logical vector for the highly variable genes
-highly_variable_logical <- rownames(wts_obj) %in% highly_variable_genes
-wts_obj[["SCT"]]@meta.features$highly_variable <- highly_variable_logical
+# Set Variable Features
+VariableFeatures(wts_obj) <- top_4000
 
+# Verify the metadata columns were created
+head(wts_obj[["RNA"]][[]])
+```
+
+```{r}
 # Visualise Feature Selection results
 
 #calculate mean expression / dispersion (using normalised data)
-normalised_counts <- GetAssayData(wts_obj, slot = "data", assay = "SCT")
+normalised_counts <- GetAssayData(wts_obj, layer = "data", assay = "RNA")
 gene_means <- Matrix::rowMeans(normalised_counts)
 gene_vars <- apply(normalised_counts, 1, var)
 gene_dispersions <- gene_vars / gene_means
+```
 
+```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # create a df for plotting
 plot_data <- data.frame(
   gene = rownames(wts_obj),
   means = gene_means,
   dispersions = gene_dispersions,
-  highly_deviant = highly_deviant_logical,
+  highly_deviant = is_deviant,
   binomial_deviance = binomial_deviance[rownames(wts_obj)]
 )
 
@@ -361,7 +369,7 @@ plot_data <- data.frame(
   gene = rownames(wts_obj),
   means = gene_means,
   dispersions = gene_dispersions,
-  highly_deviant = highly_deviant_logical,
+  highly_deviant = is_deviant,
   binomial_deviance = binomial_deviance[rownames(wts_obj)]
 )
 

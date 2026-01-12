@@ -267,18 +267,18 @@ ggsave(
 ```
 
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
-ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_nn)) +
-    # Layer 1: Plot only "Other" first
-    geom_point(data = subset(iss_meta, surface_class_nn == "Other"), 
-               size = 0.01) +
-    # Layer 2: Plot everything else on top
-    geom_point(data = subset(iss_meta, surface_class_nn != "Other"), 
-               size = 0.01) +
-    scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")) +
-    # Swap xlim to ylim and apply reversal to the new y-axis
-    coord_fixed(ylim = c(3850, 0)) +
-    theme_minimal() +
-    guides(color = guide_legend(override.aes = list(size = )))
+# ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_nn)) +
+#     # Layer 1: Plot only "Other" first
+#     geom_point(data = subset(iss_meta, surface_class_nn == "Other"), 
+#                size = 0.01) +
+#     # Layer 2: Plot everything else on top
+#     geom_point(data = subset(iss_meta, surface_class_nn != "Other"), 
+#                size = 0.01) +
+#     scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")) +
+#     # Swap xlim to ylim and apply reversal to the new y-axis
+#     coord_fixed(ylim = c(3850, 0)) +
+#     theme_minimal() +
+#     guides(color = guide_legend(override.aes = list(size = )))
 ```
 
 # METHOD 3: TUMOUR CELL DEPTH GRADIENT
@@ -454,7 +454,7 @@ ggsave(
 iss_obj_invasive$surface_class_clusters <- iss_meta$surface_class_clusters[match(Cells(iss_obj_invasive), iss_meta$cell_id)]
 
 # Save RDS
-saveRDS(iss_obj_invasive, file = "janesick_2023/processed/iss_obj_invasive.RDS")
-saveRDS(iss_meta, file = "janesick_2023/processed/iss_meta.RDS")
+saveRDS(iss_obj_invasive, file ="/Users/glero527/Documents/microenvironments/01_data/janesick_2023/processed/iss_obj_invasive.RDS")
+saveRDS(iss_meta, file = "/Users/glero527/Documents/microenvironments/01_data/janesick_2023/processed/iss_meta.RDS")
 ```
 

@@ -22,7 +22,7 @@ library(caret)
 
 ```{r}
 # Load Data
-iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
+# iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
 iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
 ```
@@ -54,40 +54,19 @@ n_after <- ncol(iss_obj_invasive)
 cat(round((n_before - n_after)/n_before, 2)*100, "% cells removed.")
 ```
 
-
-# Filter gene expression df to invasive tumours only (filter by invasive tumour cell ID)
+# Normalise the matrix
 ```{r}
-inv_tumour_id <- iss_obj_invasive$cell_id # get inv tumour ID's
-inv_tumour_logical_vec <- colnames(iss_expr) %in% inv_tumour_id # create logical vec of tumour ID's
-inv_tumour_expr <- iss_expr[, ..inv_tumour_logical_vec] # Filter the gene expression data to invasive tumours only
-
-gene_names <- rownames(iss_expr) # save gene names (save row names)
-col_inv_id <- colnames(inv_tumour_expr) # save cell id of invasive cells (save colnames)
-inv_tumour_expr <- data.frame(t(inv_tumour_expr)) # transposing removes row/col names
-colnames(inv_tumour_expr) <- gene_names # reassign lost gene names
-rownames(inv_tumour_expr) <- col_inv_id # reassign lost row names
-inv_tumour_expr <- inv_tumour_expr[, colnames(inv_tumour_expr) %in% train_genes]
-inv_tumour_expr$cell_id <- as.integer(rownames(inv_tumour_expr)) # create new column called cell_id
+iss_obj_invasive <- NormalizeData(iss_obj_invasive)
 ```
 
-# log transform
+# Extract normalised counts, add surface_class column
 ```{r}
-# Log transformation
-gene_cols <- setdiff(colnames(inv_tumour_expr), "cell_id")
+inv_tumour_expr <- as.data.frame(t(as.matrix(LayerData(iss_obj_invasive, layer = "data"))))
 
-inv_tumour_expr[, gene_cols] <- log1p(
-  inv_tumour_expr[, gene_cols]
-  )
+inv_tumour_expr$surface_class <- iss_obj_invasive@meta.data[, classification_method]
+rownames(inv_tumour_expr) <- iss_obj_invasive@meta.data[, 'cell_id']
 ```
 
-# Attach surface classification data to inv tumour gene expression matrix
-```{r}
-surface_class <- iss_obj_invasive@meta.data[, c('cell_id', classification_method)] # get surface class annotations
-colnames(surface_class)[2] <- "surface_class"
-inv_tumour_expr <- merge(surface_class, inv_tumour_expr, by = 'cell_id') # merge two df's by cell id
-rownames(inv_tumour_expr) <- inv_tumour_expr$cell_id # assign cell id to rownames
-inv_tumour_expr$cell_id <- NULL
-```
 
 # Split full dataset into training / test datasets (80/20 split)
 ```{r}

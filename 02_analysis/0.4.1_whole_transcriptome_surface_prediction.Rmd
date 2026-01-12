@@ -28,7 +28,7 @@ library(data.table)
 fit_lda <- readRDS("janesick_2023/processed/fit_lda.RDS")
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
 genes_to_keep <- readRDS("janesick_2023/processed/genes_to_keep.RDS")
-# wts_obj <- readRDS("janesick_2023/raw_clean/wts_obj_clean.RDS")
+wts_obj <- readRDS("janesick_2023/raw_clean/wts_obj_clean.RDS")
 ```
 
 # Create new WTS object with quantile matched data
@@ -38,8 +38,24 @@ wts_expr_clean <- fread("janesick_2023/raw/scRNAseq_data_quantile_matched.txt") 
 rownames(wts_expr_clean) <- wts_expr_clean$V1
 wts_expr_clean$V1 <- NULL
 
-wts_meta_clean <- readRDS("janesick_2023/raw_clean/wts_meta_clean.RDS") %>% as.data.frame()
-wts_obj = CreateSeuratObject(counts = wts_expr_clean, meta.data = wts_meta_clean)
+# wts_meta_clean <- readRDS("janesick_2023/raw_clean/wts_meta_clean.RDS") %>% as.data.frame()
+# wts_obj = CreateSeuratObject(counts = wts_expr_clean, meta.data = wts_meta_clean)
+```
+
+```{r}
+# Remove genes which are not shared between ISS and WTS
+wts_obj <- subset(wts_obj, features = shared_genes)
+```
+
+
+```{r}
+# covert quantile matched counts to sparse matrix
+counts_matrix_sparse <- as(as.matrix(wts_expr_clean), "dgCMatrix")
+
+# Replace old RAW counts with quantile matched sparse matrix
+wts_obj[["RNA"]] <- SetAssayData(object = wts_obj[["RNA"]], 
+                             layer = "counts", 
+                             new.data = counts_matrix_sparse)
 ```
 
 # Check gene counts of random genes
@@ -61,27 +77,11 @@ wts_obj = CreateSeuratObject(counts = wts_expr_clean, meta.data = wts_meta_clean
 wts_obj_invasive <- subset(wts_obj, subset = Annotation %in% "Invasive_Tumor")
 ```
 
-# Extract the RAW counts and apply log normalisation
-
+# Normalise
 ```{r}
-# Extract RAW counts (not normalized) - we'll normalize the same way as ISS training data
-raw_counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
-
-# Transpose so cells are rows and genes are columns
-expr_matrix <- as.matrix(t(raw_counts))
-expr_df <- as.data.frame(expr_matrix)
-
-# Log transformation
-gene_cols <- setdiff(colnames(expr_df), "cell_id")
-
-expr_df[, gene_cols] <- log1p(
-  expr_df[, gene_cols]
-  )
-
-
-# Add cell identifiers
-expr_df$cell_id <- rownames(expr_df)
+wts_obj_invasive <- NormalizeData(wts_obj_invasive)
 ```
+
 
 # Align genes between two data sets
 ```{r}
