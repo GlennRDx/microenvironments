@@ -80,31 +80,31 @@ wts_obj_invasive <- subset(wts_obj, subset = Annotation %in% "Invasive_Tumor")
 # Normalise
 ```{r}
 wts_obj_invasive <- NormalizeData(wts_obj_invasive)
+wts_obj_invasive <- ScaleData(wts_obj_invasive)
+```
+# Extract normalised count matrix in preparation for prediction
+```{r}
+inv_tumour_expr <- as.data.frame(t(as.matrix(LayerData(wts_obj_invasive, layer = "data"))))
 ```
 
 
 # Align genes between two data sets
 ```{r}
-genes_in_scrna <- intersect(genes_to_keep, colnames(expr_df))
+genes_in_scrna <- intersect(genes_to_keep, colnames(inv_tumour_expr))
 cat("\nGene alignment summary:\n")
 cat("Genes in LDA model:", length(genes_to_keep), "\n")
 cat("Genes found in scRNA-seq:", length(genes_in_scrna), "\n")
 # Create expression matrix with only available genes
-expr_df_aligned <- expr_df %>%
-  dplyr::select(cell_id, all_of(genes_in_scrna))
+expr_df_aligned <- inv_tumour_expr[, genes_to_keep]
 # reorder columns to match the training data
 expr_df_aligned <- expr_df_aligned %>%
-  dplyr::select(cell_id, all_of(genes_to_keep))
+  dplyr::select(all_of(genes_to_keep))
 ```
 
 # Apply LDA model to predict surface / core labels
 ```{r}
-# Remove cell_id column for prediction
-expr_for_prediction <- expr_df_aligned %>%
-  dplyr::select(-cell_id)
-
 # Make predictions
-lda_predictions <- predict(fit_lda, newdata = expr_for_prediction)
+lda_predictions <- predict(fit_lda, newdata = expr_df_aligned)
 
 # Extract predicted classes and posterior probabilities
 predicted_classes <- lda_predictions$class
@@ -113,12 +113,12 @@ lda_scores <- lda_predictions$x
 
 # Create results dataframe
 results_df <- data.frame(
-  cell_id = expr_df_aligned$cell_id,
+  cell_id = rownames(expr_df_aligned),
   predicted_class = predicted_classes,
   prob_core = posterior_probs[, "Core"],
   prob_surface = posterior_probs[, "Surface"],
   LD1 = lda_scores[, 1],
-  annotation = wts_obj_invasive$Annotation[match(expr_df_aligned$cell_id, colnames(wts_obj_invasive))],
+  annotation = wts_obj_invasive$Annotation[match(rownames(expr_df_aligned), colnames(wts_obj_invasive))],
   stringsAsFactors = FALSE
 )
 

@@ -57,6 +57,7 @@ cat(round((n_before - n_after)/n_before, 2)*100, "% cells removed.")
 # Normalise the matrix
 ```{r}
 iss_obj_invasive <- NormalizeData(iss_obj_invasive)
+iss_obj_invasive <- ScaleData(iss_obj_invasive)
 ```
 
 # Extract normalised counts, add surface_class column
@@ -92,6 +93,13 @@ rownames(inv_gene_exp_test) <- inv_gene_exp_test$cell_id
 inv_gene_exp_test$cell_id <- NULL
 ```
 
+# Filter genes to include only the training genes
+```{r}
+inv_gene_exp_train <- inv_gene_exp_train %>%
+  dplyr::select(surface_class, all_of(train_genes))
+```
+
+
 # Feature selection  
  - Remove genes that have zero variance and thus are not discriminatory between groups.  
 ```{r}
@@ -112,7 +120,7 @@ genes_to_keep <- names(keep_genes)[keep_genes]
 genes_removed <- names(keep_genes)[!keep_genes]
 
 print("Genes removed:")
-print(genes_removed)
+print(length(genes_removed))
 
 inv_gene_exp_filtered <- inv_gene_exp_train %>%
   dplyr::select(surface_class, all_of(genes_to_keep))
@@ -240,3 +248,45 @@ capture.output(
   file = file.path(fig_subdir, paste0("confusion_matrix_", classification_method, ".txt"))
 )
 ```
+
+```{r}
+# 1. Prepare Plotting Data
+# Extract full metadata from the Seurat object
+plot_meta <- iss_obj_invasive@meta.data
+
+# Create a column for Classification Status
+# Default to "Correct" (this covers background cells and correct predictions)
+plot_meta$classification_status <- "Correct"
+
+# Identify Test Set cells
+test_cells <- rownames(inv_gene_exp_test)
+
+# Assign status for Test Set cells
+# Logic: If truth == prediction, keep "Correct", otherwise label the error
+plot_meta[test_cells, "classification_status"] <- ifelse(
+  inv_gene_exp_test$surface_class == inv_gene_exp_test$predicted_surface_class,
+  "Correct",
+  paste0("False ", inv_gene_exp_test$predicted_surface_class)
+)
+
+# 2. Setup Colors
+colors <- c("Correct" = "grey80", "False Surface" = "red", "False Core" = "black")
+
+# 3. Plot
+ggplot(plot_meta, aes(x = y_centroid, y = x_centroid, color = classification_status)) +
+    # Layer 1: Correct (Background + Correctly classified)
+    geom_point(data = subset(plot_meta, classification_status == "Correct"), 
+               size = 1) +
+    # Layer 2: False Surface (Intermediate Size)
+    geom_point(data = subset(plot_meta, classification_status == "False Surface"), 
+               size = 1) +
+    # Layer 3: False Core (Largest Size)
+    geom_point(data = subset(plot_meta, classification_status == "False Core"), 
+               size = 1) +
+    scale_color_manual(values = colors) +
+    # Swap xlim to ylim and apply reversal to the new y-axis
+    coord_fixed(ylim = c(3850, 0)) +
+    theme_minimal() +
+    guides(color = guide_legend(override.aes = list(size = 3)))
+```
+

@@ -29,4 +29,8 @@ BiocManager::install("Rhdf5lib", type = "source", force = TRUE)
 BiocManager::install("glmGamPoi")
 BiocManager::install("DESeq2")
 BiocManager::install("MAST")
+BiocManager::install("clusterProfiler")
+BiocManager::install("org.Hs.eg.db")
+BiocManager::install("gage")
+BiocManager::install("gageData")
 ```
