@@ -203,8 +203,8 @@ ggsave(
 )
 ```
 
-```{r, fig.width=7.87*2, fig.height = 6.5*2, dpi=300, dev='tiff', out.width='100%'}
-ggplot(iss_meta, aes(x = x_centroid, y = y_centroid, color = surface_class_radius)) +
+```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
+ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_radius)) +
     # Layer 1: Plot only "Other" first
     geom_point(data = subset(iss_meta, surface_class_radius == "Other"), 
                size = 0.01) +
@@ -212,10 +212,10 @@ ggplot(iss_meta, aes(x = x_centroid, y = y_centroid, color = surface_class_radiu
     geom_point(data = subset(iss_meta, surface_class_radius != "Other"), 
                size = 0.01) +
     scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")) +
-    coord_fixed() +
-    scale_x_reverse() + 
+    # Swap xlim to ylim and apply reversal to the new y-axis
+    coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
-    guides(color = guide_legend(override.aes = list(size = 1)))
+    guides(color = guide_legend(override.aes = list(size = 2)))
 ```
 
 
@@ -248,37 +248,19 @@ iss_meta$surface_class_nn <- ifelse(
 table(iss_meta$surface_class_nn)
 ```
 
-```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
-p3 <- plot_surface_classification(
-  data = iss_meta,
-  colour_col = "surface_class_nn",
-  show_zoom = F,
-  custom_colours = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")
-)
-
-ggsave(
-  filename = file.path(fig_subdir, "p3_ME_annotations_knn_method.png"),
-  plot = p3,
-  dpi = 300,
-  width = 4*7.87,
-  height = 4*6,
-  scale  = 0.5
-)
-```
-
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
-# ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_nn)) +
-#     # Layer 1: Plot only "Other" first
-#     geom_point(data = subset(iss_meta, surface_class_nn == "Other"), 
-#                size = 0.01) +
-#     # Layer 2: Plot everything else on top
-#     geom_point(data = subset(iss_meta, surface_class_nn != "Other"), 
-#                size = 0.01) +
-#     scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")) +
-#     # Swap xlim to ylim and apply reversal to the new y-axis
-#     coord_fixed(ylim = c(3850, 0)) +
-#     theme_minimal() +
-#     guides(color = guide_legend(override.aes = list(size = )))
+ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_nn)) +
+    # Layer 1: Plot only "Other" first
+    geom_point(data = subset(iss_meta, surface_class_nn == "Other"), 
+               size = 0.01) +
+    # Layer 2: Plot everything else on top
+    geom_point(data = subset(iss_meta, surface_class_nn != "Other"), 
+               size = 0.01) +
+    scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")) +
+    # Swap xlim to ylim and apply reversal to the new y-axis
+    coord_fixed(ylim = c(3850, 0)) +
+    theme_minimal() +
+    guides(color = guide_legend(override.aes = list(size = 2)))
 ```
 
 # METHOD 3: TUMOUR CELL DEPTH GRADIENT
@@ -303,21 +285,22 @@ if (any(is_core) && any(is_surface)) {
 
 summary(iss_meta[iss_meta$surface_class_radius == "Core",]$tumour_depth)
 ```
-```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
-p4 <- plot_surface_classification(
-  data = iss_meta,
-  colour_col = "tumour_depth",
-  continuous = T
-)
-
-ggsave(
-  filename = file.path(fig_subdir, "p4_ME_annotations_depth_method.png"),
-  plot = p4,
-  dpi = 300,
-  width = 4*7.87,
-  height = 4*6,
-  scale  = 0.5
-)
+```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
+ggplot(iss_meta, aes(x = y_centroid, y = x_centroid)) +
+    # Layer 1: Plot "Other" (NA depth) first as grey
+    geom_point(data = subset(iss_meta, is.na(tumour_depth)), 
+               color = "grey75",
+               size = 0.01) +
+    # Layer 2: Plot Tumour cells (Valid depth) on top
+    geom_point(data = subset(iss_meta, !is.na(tumour_depth)), 
+               aes(color = tumour_depth),
+               size = 0.01) +
+    # Use the same palette as your previous function
+    scale_color_gradientn(colors = paletteer::paletteer_c("grDevices::Blue-Red 3", 30)) +
+    # Swap xlim to ylim and apply reversal to the new y-axis
+    coord_fixed(ylim = c(3850, 0)) +
+    theme_minimal() +
+    labs(color = "Depth")
 ```
 
 ```{r}
@@ -329,10 +312,10 @@ iss_meta$depth_category[iss_meta$surface_class_radius == "Surface"] <- "Surface"
 
 # 3. Assign Shallow Core (Depth between 0 and 5)
 # We must ensure we only pick 'Core' cells, otherwise 'Surface' (depth=0) gets overwritten
-iss_meta$depth_category[iss_meta$surface_class_radius == "Core" & iss_meta$tumour_depth <= 15] <- "Shallow Core"
+iss_meta$depth_category[iss_meta$surface_class_radius == "Core" & iss_meta$tumour_depth <= 20] <- "Shallow Core"
 
 # 4. Assign Deep Core (Depth > 5)
-iss_meta$depth_category[iss_meta$surface_class_radius == "Core" & iss_meta$tumour_depth > 15] <- "Deep Core"
+iss_meta$depth_category[iss_meta$surface_class_radius == "Core" & iss_meta$tumour_depth > 20] <- "Deep Core"
 
 # Check the counts
 table(iss_meta$depth_category)
@@ -390,30 +373,25 @@ iss_obj_invasive <- subset(iss_obj, subset = Annotation == "Invasive_Tumor")
 
 # 2. Standard Workflow
 iss_obj_invasive <- iss_obj_invasive %>%
-  NormalizeData() %>%
-  FindVariableFeatures() %>%
-  ScaleData() %>%
-  RunPCA() %>%
-  FindNeighbors(dims = 1:10) %>%
-  FindClusters(resolution = 0.3, algorithm = 4) %>%
-  RunUMAP(dims = 1:10)
+  NormalizeData(verbose = F) %>%
+  FindVariableFeatures(verbose = F) %>%
+  ScaleData(verbose = F) %>%
+  RunPCA(verbose = F) %>%
+  FindNeighbors(dims = 1:10, verbose = F) %>%
+  FindClusters(resolution = 0.4, algorithm = 4, verbose = F) %>%
+  RunUMAP(dims = 1:10, verbose = F)
+
+print("Standard Workflow Complete")
 
 # 3. Visualise Clusters
 p6 <- DimPlot(iss_obj_invasive, label = F) +
   scale_color_viridis_d(option = "turbo") +
   ggtitle("Leiden Clustering")
+p6
 
 # 4. Map Clusters back to Metadata
 cluster_map <- Idents(iss_obj_invasive)
 iss_meta$cluster <- as.character(cluster_map[match(iss_meta$cell_id, names(cluster_map))])
-
-# 5. classify based on clusters (manual hard-code annotation)
-iss_meta <- iss_meta %>%
-  mutate(surface_class_clusters = case_when(
-    cluster %in% c("1", "2") ~ "Core",
-    cluster %in% c("3") ~ "Surface",
-    TRUE ~ NA_character_
-  ))
 
 ggsave(
   filename = file.path(fig_subdir, "p6_leiden_cluster_tumour_cells.png"),
@@ -424,25 +402,56 @@ ggsave(
   scale  = 0.5
 )
 ```
-```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
+
+```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
 # Get turbo colour palette
 clusters <- sort(unique(na.omit(iss_meta$cluster)))
 n_clusters <- length(clusters)
 turbo_cols <- viridis::viridis_pal(option = "turbo")(n_clusters)
 names(turbo_cols) <- clusters
 
-p7 <- plot_surface_classification(data = iss_meta,
-                            colour_col = "cluster",
-                            custom_colours = turbo_cols)
+ggplot(iss_meta, aes(x = y_centroid, y = x_centroid)) +
+    # Layer 1: Plot "Other" (NA cluster) first as grey
+    geom_point(data = subset(iss_meta, is.na(cluster)), 
+               color = "white", 
+               size = 0.01) +
+    # Layer 2: Plot Clusters on top
+    geom_point(data = subset(iss_meta, !is.na(cluster)), 
+               aes(color = cluster), 
+               size = 0.01) +
+    # Use the Turbo palette (Discrete version)
+    scale_color_viridis_d(option = "turbo") +
+    # Swap xlim to ylim and apply reversal to the new y-axis
+    coord_fixed(ylim = c(3850, 0)) +
+    theme_minimal() +
+    guides(color = guide_legend(override.aes = list(size = 2)))
+```
+```{r}
+# 5. classify based on clusters (manual hard-code annotation)
+iss_meta <- iss_meta %>%
+  mutate(surface_class_clusters = case_when(
+    cluster %in% c("1", "3", "4") ~ "Core",
+    cluster %in% c("2", "7") ~ "Surface",
+    TRUE ~ "Other"
+  ))
 
-ggsave(
-  filename = file.path(fig_subdir, "p7_ME_annotations_cluster_method.png"),
-  plot = p7,
-  dpi = 300,
-  width = 4*7.87,
-  height = 4*6,
-  scale  = 0.5
-)
+# Add new cluster metadata
+iss_obj_invasive$surface_class_clusters <- iss_meta$surface_class_clusters[match(Cells(iss_obj_invasive), iss_meta$cell_id)]
+```
+
+```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
+ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_clusters)) +
+    # Layer 1: Plot only "Other" first
+    geom_point(data = subset(iss_meta, surface_class_clusters == "Other"), 
+               size = 0.01) +
+    # Layer 2: Plot everything else on top
+    geom_point(data = subset(iss_meta, surface_class_clusters != "Other"), 
+               size = 0.01) +
+    scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")) +
+    # Swap xlim to ylim and apply reversal to the new y-axis
+    coord_fixed(ylim = c(3850, 0)) +
+    theme_minimal() +
+    guides(color = guide_legend(override.aes = list(size = 2)))
 ```
 
 
@@ -450,9 +459,6 @@ ggsave(
 - iss_obj_invasive already has gene expression counts, radius/KNN/depth metadata, and PCA/UMAP coords
 - Missing: "surface_class_clusters". So we add that back then we can save the RDS files.
 ```{r}
-# Add new cluster metadata
-iss_obj_invasive$surface_class_clusters <- iss_meta$surface_class_clusters[match(Cells(iss_obj_invasive), iss_meta$cell_id)]
-
 # Save RDS
 saveRDS(iss_obj_invasive, file ="/Users/glero527/Documents/microenvironments/01_data/janesick_2023/processed/iss_obj_invasive.RDS")
 saveRDS(iss_meta, file = "/Users/glero527/Documents/microenvironments/01_data/janesick_2023/processed/iss_meta.RDS")

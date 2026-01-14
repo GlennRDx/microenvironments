@@ -55,5 +55,5 @@ prediction_params <- list(
 # 0.5.1
 validation_params <- list(
   n_pseudo_reps = 2,      # Number of pseudo-replicates
-  marker_method = "wilcox"  # Options: "MAST", "wilcox", "DESeq2"
+  marker_method = "MAST"  # Options: "MAST", "wilcox", "DESeq2"
 )
