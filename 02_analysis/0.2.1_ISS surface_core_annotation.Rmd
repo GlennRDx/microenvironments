@@ -447,7 +447,7 @@ ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_clust
     # Layer 2: Plot everything else on top
     geom_point(data = subset(iss_meta, surface_class_clusters != "Other"), 
                size = 0.01) +
-    scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")) +
+    scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "white")) +
     # Swap xlim to ylim and apply reversal to the new y-axis
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +

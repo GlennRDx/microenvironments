@@ -1,0 +1,326 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+# Load config.R
+source("config.R") 
+
+# Set root directory using the variable from config
+knitr::opts_knit$set(root.dir = data_dir)
+
+# Load libraries
+library(MASS)
+library(dplyr)
+library(data.table, quietly = T)
+library(ggplot2)
+library(caret)
+```
+
+```{r}
+# Load Data
+# iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
+iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
+shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
+```
+
+# Select 2/3 of the shared genes for training
+```{r}
+# Randomly select 2/3 of the shared genes to serve as the feature pool
+# (This mimics selecting a gene panel)
+set.seed(lda_params$seed)
+train_genes <- sample(shared_genes, size = floor(length(shared_genes) * lda_params$train_prop))
+
+# Save list of training genes
+saveRDS(train_genes, file = "janesick_2023/processed/train_genes.RDS")
+```
+
+# Filter to Surface and Core cells only
+```{r}
+# Calculate number of cells before filtering
+n_before <- ncol(iss_obj_invasive)
+
+# Get the labels from the dynamically selected method
+labels <- iss_obj_invasive@meta.data[[classification_method]]
+
+# Define which classes to KEEP
+classes_to_keep <- c("Surface", "Core")
+
+# Create a boolean vector for cells that match the allowed classes
+# This automatically removes NAs (as they won't match) and "Other"
+cells_to_keep <- !is.na(labels) & (labels %in% classes_to_keep)
+
+# Subset the Seurat object
+iss_obj_invasive <- subset(iss_obj_invasive, cells = colnames(iss_obj_invasive)[cells_to_keep])
+
+# Recalculate number of cells after filtering
+n_after <- ncol(iss_obj_invasive)
+cat(round((n_before - n_after)/n_before, 2)*100, "% cells removed (NAs and 'Other').\n")
+
+# CRITICAL: Drop unused factor levels
+# If we don't do this, R will still think "Other" is a possible category with 0 cells
+iss_obj_invasive@meta.data[[classification_method]] <- factor(
+  as.character(iss_obj_invasive@meta.data[[classification_method]])
+)
+```
+
+
+# Normalise the matrix
+```{r}
+iss_obj_invasive <- NormalizeData(iss_obj_invasive)
+iss_obj_invasive <- ScaleData(iss_obj_invasive)
+```
+
+# Extract normalised counts, add surface_class column
+```{r}
+inv_tumour_expr <- as.data.frame(t(as.matrix(LayerData(iss_obj_invasive, layer = "data"))))
+
+# Dynamically assign the class column based on config
+inv_tumour_expr$surface_class <- iss_obj_invasive@meta.data[, classification_method]
+rownames(inv_tumour_expr) <- iss_obj_invasive@meta.data[, 'cell_id']
+
+# Ensure surface_class is a factor for caret/LDA
+inv_tumour_expr$surface_class <- as.factor(inv_tumour_expr$surface_class)
+```
+
+
+# Split full dataset into training / test datasets (80/20 split)
+```{r}
+# --- Configuration for Repeated CV ---
+n_repeats <- 10       # Number of times to repeat the full 5-fold cycle
+n_folds   <- 5        # 5-fold means 80/20 split
+set.seed(lda_params$seed)
+
+# Initialize storage
+all_predictions <- list()
+
+cat("Starting Repeated", n_folds, "-Fold Cross-Validation (", n_repeats, "repeats )...\n")
+
+# --- Outer Loop: Repeats ---
+for (r in 1:n_repeats) {
+  
+  # Create Folds for this repeat
+  # list = TRUE returns indices for training, so we use returnTrain=FALSE to get Test indices
+  folds <- createFolds(inv_tumour_expr$surface_class, k = n_folds, list = TRUE, returnTrain = FALSE)
+  
+  # --- Inner Loop: K-Folds ---
+  for (k in 1:n_folds) {
+    
+    # 1. Split Data
+    test_indices <- folds[[k]]
+    train_data <- inv_tumour_expr[-test_indices, ]
+    test_data  <- inv_tumour_expr[test_indices, ]
+    
+    # 2. Filter Genes (Feature Selection inside the loop to avoid leakage)
+    # Use only the pre-selected 'train_genes' pool
+    current_train_subset <- train_data %>% dplyr::select(surface_class, all_of(train_genes))
+    
+    # Remove zero-variance genes within the training set
+    gene_cols <- setdiff(colnames(current_train_subset), "surface_class")
+    keep_genes <- sapply(gene_cols, function(gene) {
+      var_by_group <- current_train_subset %>%
+        group_by(surface_class) %>%
+        summarise(var = var(.data[[gene]], na.rm = TRUE), .groups = 'drop')
+      any(var_by_group$var > 0)
+    })
+    active_genes <- names(keep_genes)[keep_genes]
+    
+    # 3. Fit LDA Model on Training Data
+    fit_data <- current_train_subset %>% dplyr::select(surface_class, all_of(active_genes))
+    fit_lda_cv <- lda(surface_class ~ ., data = fit_data)
+    
+    # 4. Predict on Test Data
+    predict_data <- test_data %>% dplyr::select(all_of(active_genes))
+    pred_obj <- predict(fit_lda_cv, newdata = predict_data)
+    
+    # 5. Store Predictions
+    fold_preds <- data.frame(
+      cell_id = rownames(test_data),
+      repeat_id = r,
+      fold_id = k,
+      actual_class = test_data$surface_class,
+      predicted_class = pred_obj$class,
+      stringsAsFactors = FALSE
+    )
+    
+    all_predictions[[paste0(r, "_", k)]] <- fold_preds
+  }
+}
+
+# Combine all results
+full_results <- do.call(rbind, all_predictions)
+```
+
+# Process consensus results
+```{r}
+# Aggregate predictions per cell
+cell_consensus <- full_results %>%
+   group_by(cell_id) %>%
+   summarise(
+     # Fix: Use dplyr::first() explicitly
+     actual_class = dplyr::first(actual_class), 
+     n_predictions = n(),
+     
+     # Count how many times it was predicted as Surface
+     n_predicted_surface = sum(predicted_class == "Surface"), 
+     .groups = 'drop'
+   ) %>%
+   mutate(
+     # Probability of being Surface
+     prob_surface = n_predicted_surface / n_predictions,
+     
+     # Consensus Prediction (> 50% probability)
+     consensus_prediction = ifelse(prob_surface > 0.5, "Surface", "Core"),
+     
+     # Stability: How confident is the model? (1.0 = always same prediction, 0.5 = random)
+     stability = pmax(prob_surface, 1 - prob_surface),
+     
+     # Accuracy check
+     is_correct = consensus_prediction == actual_class
+   )
+
+cat("Average Stability:", round(mean(cell_consensus$stability), 3), "\n")
+cat("Overall Consensus Accuracy:", round(mean(cell_consensus$is_correct), 3), "\n")
+
+saveRDS(cell_consensus, file = "janesick_2023/processed/lda_consensus_results.RDS")
+```
+
+# Fit the final global model
+```{r}
+# 1. Feature selection on full dataset (using train_genes pool)
+full_data_subset <- inv_tumour_expr %>% dplyr::select(surface_class, all_of(train_genes))
+
+gene_cols <- setdiff(colnames(full_data_subset), "surface_class")
+keep_genes_final <- sapply(gene_cols, function(gene) {
+  var_by_group <- full_data_subset %>%
+    group_by(surface_class) %>%
+    summarise(var = var(.data[[gene]], na.rm = TRUE), .groups = 'drop')
+  any(var_by_group$var > 0)
+})
+final_genes <- names(keep_genes_final)[keep_genes_final]
+
+# 2. Fit Final LDA
+fit_lda_final <- lda(surface_class ~ ., data = full_data_subset[, c("surface_class", final_genes)])
+
+saveRDS(fit_lda_final, file = "janesick_2023/processed/fit_lda_final.RDS")
+saveRDS(final_genes, file = "janesick_2023/processed/genes_to_keep_final.RDS")
+```
+
+# plot first 2 linear discriminants
+```{r}
+# Define figure directory
+fig_subdir <- file.path(figs_dir, "0.3.1")
+if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
+
+# Calculate LDA values for all cells
+lda_values <- predict(fit_lda_final)$x
+lda_df <- data.frame(LD1 = lda_values[,1], surface_class = inv_tumour_expr$surface_class)
+
+# Define readable labels
+method_labels <- c(
+  "surface_class_radius"   = "Radius Definition",
+  "surface_class_nn"       = "KNN Definition",
+  "surface_class_clusters" = "Unsupervised Clustering"
+)
+current_label <- method_labels[classification_method]
+if(is.na(current_label)) current_label <- classification_method
+
+# Create the plot
+p_lda <- ggplot(lda_df, aes(x = LD1, fill = surface_class)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal() +
+  labs(
+    title = "LDA Projection (Global Model)", 
+    subtitle = paste0("Ground Truth: ", current_label),
+    x = "LD1", 
+    y = "Density",
+    fill = "Region"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 12),
+    plot.subtitle = element_text(size = 10, color = "gray30")
+  )
+
+print(p_lda)
+ggsave(filename = file.path(fig_subdir, paste0("LDA_density_", classification_method, ".png")), plot = p_lda)
+```
+
+# consensus confusion matrix
+```{r}
+# Create confusion matrix based on the Consensus prediction vs Actual
+conf_matrix <- confusionMatrix(
+  factor(cell_consensus$consensus_prediction, levels = c("Core", "Surface")),
+  factor(cell_consensus$actual_class, levels = c("Core", "Surface"))
+)
+
+print(conf_matrix)
+
+capture.output(
+  conf_matrix, 
+  file = file.path(fig_subdir, paste0("confusion_matrix_consensus_", classification_method, ".txt"))
+)
+```
+
+# spatial plot of consensus errors
+```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
+# 1. Merge consensus results back with spatial metadata
+# We need x_centroid/y_centroid from the original object
+meta_coords <- iss_obj_invasive@meta.data %>% 
+  dplyr::select(cell_id, x_centroid, y_centroid)
+
+plot_data <- merge(cell_consensus, meta_coords, by = "cell_id")
+
+# 2. Define Classification Status for Plotting
+# Logic: If Correct -> "Correct", Else -> "False [Predicted Class]"
+plot_data$classification_status <- ifelse(
+  plot_data$is_correct, 
+  "Correct", 
+  paste0("False ", plot_data$consensus_prediction)
+)
+
+# 3. Setup Colors
+colors <- c("Correct" = "grey80", "False Surface" = "red", "False Core" = "black")
+
+# 4. Plot
+p_spatial <- ggplot(plot_data, aes(x = y_centroid, y = x_centroid, color = classification_status)) +
+    # Layer 1: Correct (Background)
+    geom_point(data = subset(plot_data, classification_status == "Correct"), 
+               size = 0.01) +
+    # Layer 2: False Surface (Intermediate)
+    geom_point(data = subset(plot_data, classification_status == "False Surface"), 
+               size = 0.01) +
+    # Layer 3: False Core (Top)
+    geom_point(data = subset(plot_data, classification_status == "False Core"), 
+               size = 0.01) +
+    scale_color_manual(values = colors) +
+    # Swap axes and reverse Y to match histology orientation
+    coord_fixed(ylim = c(3850, 0)) +
+    theme_minimal() +
+    labs(
+      title = "Spatial Map of LDA Classification Errors",
+      subtitle = paste0("Based on Consensus of ", n_repeats, "x 5-Fold CV")
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 3)))
+
+print(p_spatial)
+
+ggsave(
+  filename = file.path(fig_subdir, paste0("Spatial_Errors_Consensus_", classification_method, ".png")),
+  plot = p_spatial, dpi = 300, width = 8, height = 6
+)
+```
+
+# plot prediction uncertainty
+```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
+ggplot(plot_data, aes(x = y_centroid, y = x_centroid, color = prob_surface)) +
+  geom_point(size = 0.01) +
+  scale_color_gradient2(low = "#fac0da", mid = "black", high = "#C90065", midpoint = 0.5,
+                        name = "Prob(Surface)") +
+  coord_fixed(ylim = c(3850, 0)) +
+  theme_minimal() +
+  labs(title = "LDA Surface Probability Map", subtitle = "White = High Uncertainty (Transition Zone)")
+```
+

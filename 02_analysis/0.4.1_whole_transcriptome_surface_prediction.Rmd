@@ -25,9 +25,9 @@ library(data.table)
 # load pretrained LDA model & list of genes used
 
 ```{r}
-fit_lda <- readRDS("janesick_2023/processed/fit_lda.RDS")
+fit_lda <- readRDS("janesick_2023/processed/fit_lda_final.RDS")
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
-genes_to_keep <- readRDS("janesick_2023/processed/genes_to_keep.RDS")
+genes_to_keep <- readRDS("janesick_2023/processed/genes_to_keep_final.RDS")
 wts_obj <- readRDS("janesick_2023/raw_clean/wts_obj_clean.RDS")
 ```
 
