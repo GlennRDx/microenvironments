@@ -16,6 +16,7 @@ knitr::opts_knit$set(root.dir = data_dir)
 library(tidyverse)
 library(Seurat)
 library(dplyr)
+library(EnhancedVolcano)
 ```
 
 ```{r}

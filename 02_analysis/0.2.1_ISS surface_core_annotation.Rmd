@@ -193,18 +193,14 @@ p1 <- ggplot(subset(iss_meta, !is.na(neighbour_count)), aes(x = neighbour_count)
     y = "Count of Cells"
   )
 
-ggsave(
-  filename = file.path(fig_subdir, "p1_dist_of_counts_of_cells_with_n_neighbours_in_radius.png"),
-  plot = p1,
-  dpi = 300,
-  scale = 2,
-  width = 7.87,
-  height = 7
-)
+p1
+
+ggsave(file.path(fig_subdir, "p1_dist_of_counts_of_cells_with_n_neighbours_in_radius.png"), 
+       plot = p1, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
 ```
 
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
-ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_radius)) +
+p2 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_radius)) +
     # Layer 1: Plot only "Other" first
     geom_point(data = subset(iss_meta, surface_class_radius == "Other"), 
                size = 0.01) +
@@ -216,6 +212,11 @@ ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_radiu
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
     guides(color = guide_legend(override.aes = list(size = 2)))
+
+p2
+
+ggsave(file.path(fig_subdir, "p2_ME_annotations_radius_method.png"), 
+       plot = p2, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
 ```
 
 
@@ -249,7 +250,7 @@ table(iss_meta$surface_class_nn)
 ```
 
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
-ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_nn)) +
+p3 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_nn)) +
     # Layer 1: Plot only "Other" first
     geom_point(data = subset(iss_meta, surface_class_nn == "Other"), 
                size = 0.01) +
@@ -261,6 +262,11 @@ ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_nn)) 
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
     guides(color = guide_legend(override.aes = list(size = 2)))
+
+p3
+
+ggsave(file.path(fig_subdir, "p3_ME_annotations_knn_method.png"), 
+       plot = p3, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
 ```
 
 # METHOD 3: TUMOUR CELL DEPTH GRADIENT
@@ -286,7 +292,7 @@ if (any(is_core) && any(is_surface)) {
 summary(iss_meta[iss_meta$surface_class_radius == "Core",]$tumour_depth)
 ```
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
-ggplot(iss_meta, aes(x = y_centroid, y = x_centroid)) +
+p4 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid)) +
     # Layer 1: Plot "Other" (NA depth) first as grey
     geom_point(data = subset(iss_meta, is.na(tumour_depth)), 
                color = "grey75",
@@ -301,6 +307,11 @@ ggplot(iss_meta, aes(x = y_centroid, y = x_centroid)) +
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
     labs(color = "Depth")
+
+p4
+
+ggsave(file.path(fig_subdir, "p4_ME_annotations_depth_method.png"), 
+       plot = p4, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
 ```
 
 ```{r}
@@ -351,7 +362,7 @@ table(iss_meta$depth_category)
 
 
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
-ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = depth_category)) +
+p5 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = depth_category)) +
     # Layer 1: Plot only "Other" first
     geom_point(data = subset(iss_meta, surface_class_nn == "Other"), 
                size = 0.01) +
@@ -363,6 +374,11 @@ ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = depth_category)) +
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
     guides(color = guide_legend(override.aes = list(size = 2)))
+
+p5
+
+ggsave(file.path(fig_subdir, "p5_identify_shallow_core_cells.png"), 
+       plot = p5, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
 ```
 
 # METHOD 4: GENE EXPRESSION CLUSTERING
@@ -393,14 +409,8 @@ p6
 cluster_map <- Idents(iss_obj_invasive)
 iss_meta$cluster <- as.character(cluster_map[match(iss_meta$cell_id, names(cluster_map))])
 
-ggsave(
-  filename = file.path(fig_subdir, "p6_leiden_cluster_tumour_cells.png"),
-  plot = p6,
-  dpi = 300,
-  width = 7.87,
-  height = 6,
-  scale  = 0.5
-)
+ggsave(file.path(fig_subdir, "p6_leiden_cluster_tumour_cells.png"), 
+       plot = p6, dpi = 300, width = 7.87*1, height = 6.5*1)
 ```
 
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
@@ -410,7 +420,7 @@ n_clusters <- length(clusters)
 turbo_cols <- viridis::viridis_pal(option = "turbo")(n_clusters)
 names(turbo_cols) <- clusters
 
-ggplot(iss_meta, aes(x = y_centroid, y = x_centroid)) +
+p7 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid)) +
     # Layer 1: Plot "Other" (NA cluster) first as grey
     geom_point(data = subset(iss_meta, is.na(cluster)), 
                color = "white", 
@@ -425,12 +435,17 @@ ggplot(iss_meta, aes(x = y_centroid, y = x_centroid)) +
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
     guides(color = guide_legend(override.aes = list(size = 2)))
+
+p7
+
+ggsave(file.path(fig_subdir, "p7_ME_annotations_cluster_method.png"), 
+       plot = p7, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
 ```
 ```{r}
 # 5. classify based on clusters (manual hard-code annotation)
 iss_meta <- iss_meta %>%
   mutate(surface_class_clusters = case_when(
-    cluster %in% c("1", "3", "4") ~ "Core",
+    cluster %in% c("1", "3", "4", "5") ~ "Core",
     cluster %in% c("2", "7") ~ "Surface",
     TRUE ~ "Other"
   ))
@@ -440,7 +455,7 @@ iss_obj_invasive$surface_class_clusters <- iss_meta$surface_class_clusters[match
 ```
 
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
-ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_clusters)) +
+p8 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_clusters)) +
     # Layer 1: Plot only "Other" first
     geom_point(data = subset(iss_meta, surface_class_clusters == "Other"), 
                size = 0.01) +
@@ -452,6 +467,11 @@ ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_clust
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
     guides(color = guide_legend(override.aes = list(size = 2)))
+
+p8
+
+ggsave(file.path(fig_subdir, "p7_ME_annotations_cluster_method_labelled.png"), 
+       plot = p8, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
 ```
 
 

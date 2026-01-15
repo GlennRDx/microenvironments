@@ -173,7 +173,7 @@ if(is.na(current_label)) current_label <- classification_method
 p_pred <- ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
   geom_density(alpha = 0.5) +
   # Add lines for visual reference (you might want to adjust x-intercepts based on your data distribution)
-  geom_vline(xintercept = c(-1.0, 1.5), linetype = "dashed", color = "black", alpha=0.5) +
+  geom_vline(xintercept = c(-1.0, 1.5), linetype = "dashed", color = "black", alpha=0) +
   
   # Add the stats box
   annotate("label", x = Inf, y = Inf, label = stats_label, 
