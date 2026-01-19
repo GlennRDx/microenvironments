@@ -234,7 +234,7 @@ print(paste("Test Accuracy:", round(accuracy, 3)))
 ```
 
 ```{r}
-# --- Predict surface_class with LDA model ---
+# Predict surface_class with LDA model
 
 # Subset test data to only include genes used in the LDA model
 inv_gene_exp_test_filtered <- inv_gene_exp_test %>%
@@ -251,7 +251,7 @@ predicted_classes <- lda_predictions$class
 accuracy <- mean(predicted_classes == inv_gene_exp_test$surface_class)
 print(paste("Test Accuracy:", round(accuracy, 3)))
 
-# --- Generate and Save Confusion Matrix ---
+# Generate and Save Confusion Matrix
 
 # Create confusion matrix object
 conf_matrix <- confusionMatrix(
