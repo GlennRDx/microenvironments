@@ -5,6 +5,7 @@ output:
 geometry: margin=0.2in
 ---
 
+# 1. Load files & Libraries
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
 # Load config.R
 source("config.R") 
@@ -12,58 +13,50 @@ source("config.R")
 # Set root directory using the variable from config
 knitr::opts_knit$set(root.dir = data_dir)
 
+# Define figure directory
+fig_subdir <- file.path(figs_dir, "0.5.1")
+if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
+
+# Local Parameters
+p_threshold <- 1e-5
+
 # Load libraries
 library(tidyverse)
 library(Seurat)
 library(dplyr)
 library(EnhancedVolcano)
 ```
-
 ```{r}
 # Load data
 iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
 scRNA_invasive <- readRDS('janesick_2023/processed/wts_obj_invasive.RDS')
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
 train_genes <- readRDS("janesick_2023/processed/train_genes.RDS")
+
+# Filter both objects to shared genes to ensure alignment
+genes_to_keep <- intersect(rownames(scRNA_invasive), intersect(rownames(iss_obj_invasive), shared_genes))
+scRNA_invasive   <- subset(scRNA_invasive, features = genes_to_keep)
+iss_obj_invasive <- subset(iss_obj_invasive, features = genes_to_keep)
 ```
 
+# 2. DGE Analysis
 ```{r}
-table(iss_obj_invasive$surface_class_clusters)
-
-counts.mat.ISS <- GetAssayData(iss_obj_invasive, assay = "RNA", layer = "data")
-counts.mat.WTD <- GetAssayData(scRNA_invasive, assay = "RNA", layer = "data")
-
-head(counts.mat.ISS)
-head(counts.mat.WTD)
-```
-
-
-# DGE ANALYSIS
-
-```{r}
-# WTD - FindMarkers Analysis
-
-genes_to_test <- intersect(rownames(scRNA_invasive), shared_genes)
-cat("Genes to test:", length(genes_to_test), "\n")
-
-scRNA_invasive <- subset(scRNA_invasive, features = genes_to_test)
-# Set identity to predicted surface class
+# 1. scRNA-seq (WTD) Analysis
 Idents(scRNA_invasive) <- scRNA_invasive$predicted_surface_class
 
-# Run FindMarkers: Surface vs Core
-# This tests Surface against Core (positive log2FC = higher in Surface)
+# Test Surface vs Core (positive log2FC = higher in Surface)
 markers_WTD <- FindMarkers(
   scRNA_invasive,
   ident.1 = "Surface",
   ident.2 = "Core",
   test.use = validation_params$marker_method,
-  logfc.threshold = 0,  # Test all genes
-  min.pct = 0,  # Gene must be expressed in at least 10% of cells in either group
-  verbose = TRUE
+  logfc.threshold = 0.25,
+  min.pct = 0.1,
+  verbose = FALSE
 )
 
-# Convert to dataframe and add gene names
-res_WTD <- as.data.frame(markers_WTD) %>%
+# Save results to dataframe
+res_WTD <- markers_WTD %>%
   rownames_to_column("gene") %>%
   dplyr::rename(
     log2FoldChange_WTD = avg_log2FC,
@@ -72,39 +65,22 @@ res_WTD <- as.data.frame(markers_WTD) %>%
   ) %>%
   arrange(padj_WTD)
 
-cat("Total genes tested:", nrow(res_WTD), "\n")
-cat("Significant genes (padj < 0.05):", sum(res_WTD$padj_WTD < 0.05, na.rm = TRUE), "\n")
-```
-
-```{r}
-# ISS - FindMarkers Analysis
-
-# add 1 to each gene count to prevent the error: Error in estimateSizeFactorsForMatrix(counts(object), locfunc = locfunc,  : every gene contains at least one zero, cannot compute log geometric means
-# iss_obj_invasive[["RNA"]]$counts <- as.matrix(iss_obj_invasive[["RNA"]]$counts)+1
-
-# Filter to shared genes BEFORE analysis
-genes_to_test <- intersect(rownames(iss_obj_invasive), shared_genes)
-cat("Genes to test:", length(genes_to_test), "\n")
-
-iss_obj_invasive <- subset(iss_obj_invasive, features = genes_to_test)
-
-# Set identity to classification method
+# 2. ISS Analysis
 Idents(iss_obj_invasive) <- iss_obj_invasive@meta.data[[classification_method]]
 
-# Run FindMarkers: Surface vs Core
 markers_ISS <- FindMarkers(
   iss_obj_invasive,
   slot = "counts",
   ident.1 = "Surface",
   ident.2 = "Core",
   test.use = validation_params$marker_method,
-  logfc.threshold = 0,
-  min.pct = 0,
-  verbose = TRUE
+  logfc.threshold = 0.25,
+  min.pct = 0.1,
+  verbose = FALSE
 )
 
-# Convert to dataframe and add gene names
-res_ISS <- as.data.frame(markers_ISS) %>%
+# Save results to dataframe
+res_ISS <- markers_ISS %>%
   rownames_to_column("gene") %>%
   dplyr::rename(
     log2FoldChange_ISS = avg_log2FC,
@@ -112,82 +88,50 @@ res_ISS <- as.data.frame(markers_ISS) %>%
     padj_ISS = p_val_adj
   ) %>%
   arrange(padj_ISS)
+
+# 3. Save Results
+write.csv(res_ISS, file.path(data_dir, "janesick_2023/processed/DGE_ISS_Surface_vs_Core.csv"), row.names = FALSE)
+write.csv(res_WTD, file.path(data_dir, "janesick_2023/processed/DGE_WTD_Surface_vs_Core.csv"), row.names = FALSE)
 ```
 
 ```{r}
-# Merge and Compare Results
-
+# Merge Results
 comparison_full <- inner_join(
   res_ISS %>% dplyr::select(gene, log2FoldChange_ISS, padj_ISS),
   res_WTD %>% dplyr::select(gene, log2FoldChange_WTD, padj_WTD),
   by = "gene"
-)
-
-# Add significance categories
-comparison_full <- comparison_full %>%
+) %>%
   mutate(
-    sig_ISS = ifelse(padj_ISS < 0.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001, "Significant", "Not_Significant"),
-    sig_WTD = ifelse(padj_WTD < 0.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001, "Significant", "Not_Significant"),
+    sig_ISS = ifelse(padj_ISS < p_threshold, "Significant", "Not_Significant"),
+    sig_WTD = ifelse(padj_WTD < p_threshold, "Significant", "Not_Significant"),
     both_sig = paste(sig_ISS, sig_WTD, sep = " / "),
-    concordant = sign(log2FoldChange_ISS) == sign(log2FoldChange_WTD)
+    training_gene = gene %in% train_genes
   )
 
-# Add training/validation label
-comparison_full$training_gene <- comparison_full$gene %in% train_genes
-
-# Summary statistics
-cat("Total genes in comparison:", nrow(comparison_full), "\n")
-cat("Training genes:", sum(comparison_full$training_gene), "\n")
-cat("Validation genes:", sum(!comparison_full$training_gene), "\n\n")
-
-# Split into training and validation
-comparison_training <- comparison_full %>% filter(training_gene == TRUE)
+# Split into training and validation sets
+comparison_training   <- comparison_full %>% filter(training_gene == TRUE)
 comparison_validation <- comparison_full %>% filter(training_gene == FALSE)
 
-# # Get only mutually significant genes
-# comparisons_training_sig <- comparison_training %>%
-#   filter(both_sig == "Significant / Significant")
-# comparisons_validation_sig <- comparison_validation %>%
-#   filter(both_sig == "Significant / Significant")
+cat("Total genes:", nrow(comparison_full), "| Training:", nrow(comparison_training), "| Validation:", nrow(comparison_validation), "\n")
 ```
 
 ```{r}
-# Correlation Analysis
+# Calculate Spearman Correlations
+cor_train <- cor(comparison_training$log2FoldChange_ISS, comparison_training$log2FoldChange_WTD, use = "complete.obs")
+cor_valid <- cor(comparison_validation$log2FoldChange_ISS, comparison_validation$log2FoldChange_WTD, use = "complete.obs")
 
-# Training genes correlation
-cor_spearman_training <- cor(
-  comparison_training$log2FoldChange_ISS,
-  comparison_training$log2FoldChange_WTD,
-  use = "complete.obs"
-)
-cat("Training genes - Spearman rho (sig genes):", round(cor_spearman_training, 3), "\n")
-
-# Validation genes correlation
-cor_spearman_validation <- cor(
-  comparison_validation$log2FoldChange_ISS,
-  comparison_validation$log2FoldChange_WTD,
-  use = "complete.obs"
-)
-cat("Validation genes - Spearman rho (sig genes):", round(cor_spearman_validation, 3), "\n")
-
+cat("Spearman Correlation - Training:  ", round(cor_train, 3), "\n")
+cat("Spearman Correlation - Validation:", round(cor_valid, 3), "\n")
 ```
 
-# PLOTS
+# Plots
 ```{r}
-# --- Define Figure Directory ---
-fig_subdir <- file.path(figs_dir, "0.5.1")
-if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
+# Define labels
+method_labels <- c("surface_class_radius" = "Radius", "surface_class_nn" = "KNN", "surface_class_clusters" = "Cluster")
+curr_label <- method_labels[classification_method]
+if(is.na(curr_label)) curr_label <- classification_method
 
-# --- Define Readable Labels ---
-method_labels <- c(
-  "surface_class_radius"   = "Radius",
-  "surface_class_nn"       = "KNN",
-  "surface_class_clusters" = "Cluster"
-)
-current_label <- method_labels[classification_method]
-if(is.na(current_label)) current_label <- classification_method
-
-# --- Plot 1: Training Genes ---
+# 1. Training Genes
 p1 <- ggplot(comparison_training, aes(x = log2FoldChange_ISS, y = log2FoldChange_WTD)) +
   geom_point(aes(color = both_sig), alpha = 0.6, size = 2) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
@@ -200,27 +144,16 @@ p1 <- ggplot(comparison_training, aes(x = log2FoldChange_ISS, y = log2FoldChange
     "Significant / Significant" = "red"
   )) +
   labs(
-    title = paste0("Training Genes: ISS vs scRNA-seq (", current_label, ")"),
-    subtitle = paste0("Spearman rho = ", round(cor_spearman_training, 3),
-                      " (n=", nrow(comparison_training), " genes)"),
-    x = "log2 Fold Change (ISS)",
-    y = "log2 Fold Change (scRNA-seq)",
-    color = "Significance Status"
+    title = paste0("Training Genes: ISS vs scRNA-seq (", curr_label, ")"),
+    subtitle = paste0("Spearman rho = ", round(cor_train, 3), " (n=", nrow(comparison_training), ")"),
+    x = "log2 Fold Change (ISS)", y = "log2 Fold Change (scRNA-seq)", color = "Significance"
   ) +
-  theme_bw() +
-  theme(legend.position = "bottom")
+  theme_bw() + theme(legend.position = "bottom")
 
 print(p1)
+ggsave(file.path(fig_subdir, paste0("DGE_correlation_TRAINING_", classification_method, ".png")), p1, width = 7, height = 7)
 
-ggsave(
-  filename = file.path(fig_subdir, paste0("DGE_correlation_TRAINING_", classification_method, ".png")),
-  plot = p1,
-  dpi = 300,
-  width = 7,
-  height = 7
-)
-
-# --- Plot 2: Validation Genes ---
+# 2. Validation Genes
 p2 <- ggplot(comparison_validation, aes(x = log2FoldChange_ISS, y = log2FoldChange_WTD)) +
   geom_point(aes(color = both_sig), alpha = 0.6, size = 2) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
@@ -233,90 +166,49 @@ p2 <- ggplot(comparison_validation, aes(x = log2FoldChange_ISS, y = log2FoldChan
     "Significant / Significant" = "red"
   )) +
   labs(
-    title = paste0("Validation Genes: ISS vs scRNA-seq (", current_label, ")"),
-    subtitle = paste0("Spearman rho = ", round(cor_spearman_validation, 3),
-                      " (n=", nrow(comparison_validation), " genes)"),
-    x = "log2 Fold Change (ISS)",
-    y = "log2 Fold Change (scRNA-seq)",
-    color = "Significance Status"
+    title = paste0("Validation Genes: ISS vs scRNA-seq (", curr_label, ")"),
+    subtitle = paste0("Spearman rho = ", round(cor_valid, 3), " (n=", nrow(comparison_validation), ")"),
+    x = "log2 Fold Change (ISS)", y = "log2 Fold Change (scRNA-seq)", color = "Significance"
   ) +
-  theme_bw() +
-  theme(legend.position = "bottom")
+  theme_bw() + theme(legend.position = "bottom")
 
 print(p2)
-
-ggsave(
-  filename = file.path(fig_subdir, paste0("DGE_correlation_VALIDATION_", classification_method, ".png")),
-  plot = p2,
-  dpi = 300,
-  width = 7,
-  height = 7
-)
+ggsave(file.path(fig_subdir, paste0("DGE_correlation_VALIDATION_", classification_method, ".png")), p2, width = 7, height = 7)
 ```
 
 ```{r}
-EnhancedVolcano(res_ISS, lab = res_ISS$gene, x = "log2FoldChange_ISS", y = "padj_ISS", pCutoff = 0.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001)
+EnhancedVolcano(res_ISS, lab = res_ISS$gene, x = "log2FoldChange_ISS", y = "padj_ISS", pCutoff = p_threshold, title = "ISS Volcano")
+EnhancedVolcano(res_WTD, lab = res_WTD$gene, x = "log2FoldChange_WTD", y = "padj_WTD", pCutoff = p_threshold, title = "scRNA Volcano")
 ```
 
-```{r}
-EnhancedVolcano(res_WTD, lab = res_ISS$gene, x = "log2FoldChange_WTD", y = "padj_WTD", pCutoff = 0.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001)
-```
 # Plot of all genes comparing core vs surface. where x axis is surface expression level and y axis is core expression level. 
 ```{r}
-# Create df: rows are genes, 4 columns: average of gene expression values for cells categorised as surface or core: iss_core, iss_surface, scRNA_core, scRNA_surface
-# Set identities for the ISS object
-# 1. Subset ISS object: Remove NAs and keep only Core/Surface
-# Assuming classification_method is the variable name for your metadata column
-iss_subset <- subset(iss_obj_invasive, 
-                     subset = !!sym(classification_method) %in% c("Surface", "Core"))
+# Prepare Average Expression Data
+# 1. ISS: Subset & Average
+iss_subset <- subset(iss_obj_invasive, cells = colnames(iss_obj_invasive)[!is.na(iss_obj_invasive[[classification_method]])])
+Idents(iss_subset) <- classification_method
+avg_iss <- AverageExpression(iss_subset, assays = "RNA")$RNA %>% 
+  as.data.frame() %>%
+  dplyr::rename(iss_core = Core, iss_surface = Surface)
 
-# 2. Subset scRNA object: Remove NAs from predicted_surface_class
-wts_subset <- subset(scRNA_invasive, 
-                     subset = predicted_surface_class %in% c("Surface", "Core"))
-
-# 3. Set Identities for the new subsetted objects
-Idents(iss_subset) <- iss_subset@meta.data[[classification_method]]
+# 2. scRNA: Subset & Average
+wts_subset <- subset(scRNA_invasive, subset = predicted_surface_class %in% c("Surface", "Core"))
 Idents(wts_subset) <- wts_subset$predicted_surface_class
+avg_wts <- AverageExpression(wts_subset, assays = "RNA")$RNA %>% 
+  as.data.frame() %>%
+  dplyr::rename(scRNA_core = Core, scRNA_surface = Surface)
 
-# 4. Calculate Average Expression on clean data
-avg_iss_clean <- AverageExpression(iss_subset, assays = "RNA")$RNA
-avg_scRNA_clean <- AverageExpression(wts_subset, assays = "RNA")$RNA
+# 3. Merge & Annotate
+plot_data_clean <- merge(avg_iss, avg_wts, by = "row.names") %>%
+  dplyr::rename(gene = Row.names) %>%
+  left_join(comparison_full %>% dplyr::select(gene, padj_ISS, padj_WTD, training_gene), by = "gene")
 
-# 5. Rename and Merge
-colnames(avg_iss_clean) <- c("iss_core", "iss_surface")
-colnames(avg_scRNA_clean) <- c("scRNA_core", "scRNA_surface")
-
-expr_clean_df <- merge(avg_iss_clean, avg_scRNA_clean, by = "row.names")
-rownames(expr_clean_df) <- expr_clean_df$Row.names
-expr_clean_df$Row.names <- NULL
-
-# 6. Re-join with your padj results for coloring
-plot_data_clean <- expr_clean_df %>%
-  rownames_to_column("gene") %>%
-  left_join(res_ISS %>% dplyr::select(gene, padj_ISS), by = "gene") %>%
-  left_join(res_WTD %>% dplyr::select(gene, padj_WTD), by = "gene")
+# Split for plotting
+plot_data_training   <- plot_data_clean %>% filter(training_gene == TRUE)
+plot_data_validation <- plot_data_clean %>% filter(training_gene == FALSE)
 ```
-# Save DGE results tables
 ```{r}
-# (Added to end of 0.5.1)
-# Save full results for GO Analysis
-write.csv(res_ISS, file.path(data_dir, "janesick_2023/processed/DGE_ISS_Surface_vs_Core.csv"), row.names = FALSE)
-write.csv(res_WTD, file.path(data_dir, "janesick_2023/processed/DGE_WTD_Surface_vs_Core.csv"), row.names = FALSE)
-```
-
-
-```{r}
-# Check if we still have massive discrepancies
-table(plot_data_clean$scRNA_surface == 0)
-table(plot_data_clean$scRNA_core == 0)
-```
-
-
-```{r}
-library(ggplot2)
-library(patchwork)
-
-# Plotting function to keep code clean
+# Function for consistent dark-theme plots
 make_clean_plot <- function(df, x_col, y_col, p_col, title) {
   ggplot(df, aes(x = .data[[x_col]], y = .data[[y_col]], color = -log10(.data[[p_col]]))) +
     geom_point(alpha = 0.7, size = 1.2) +
@@ -336,31 +228,12 @@ make_clean_plot <- function(df, x_col, y_col, p_col, title) {
     )
 }
 
-p1_clean <- make_clean_plot(plot_data_clean, "iss_surface", "iss_core", "padj_ISS", "ISS (Cleaned)")
-p2_clean <- make_clean_plot(plot_data_clean, "scRNA_surface", "scRNA_core", "padj_WTD", "scRNA (Cleaned)")
+# Generate Plots
+p_train_iss <- make_clean_plot(plot_data_training, "iss_surface", "iss_core", "padj_ISS", "ISS (Training)")
+p_train_sc  <- make_clean_plot(plot_data_training, "scRNA_surface", "scRNA_core", "padj_WTD", "scRNA (Training)")
+p_val_iss   <- make_clean_plot(plot_data_validation, "iss_surface", "iss_core", "padj_ISS", "ISS (Validation)")
+p_val_sc    <- make_clean_plot(plot_data_validation, "scRNA_surface", "scRNA_core", "padj_WTD", "scRNA (Validation)")
 
-p1_clean + p2_clean
-```
-```{r}
-# 1. Add the training_gene label to your clean plotting data
-# We pull this from comparison_full which already has the gene -> training_gene mapping
-plot_data_clean <- plot_data_clean %>%
-  left_join(comparison_full %>% dplyr::select(gene, training_gene), by = "gene")
-
-# 2. Split the data into two subsets
-plot_data_training <- plot_data_clean %>% filter(training_gene == TRUE)
-plot_data_validation <- plot_data_clean %>% filter(training_gene == FALSE)
-
-# 3. Generate the plots for Training Genes
-p_train_iss <- make_clean_plot(plot_data_training, "iss_surface", "iss_core", "padj_ISS", "ISS (Training Genes)")
-p_train_sc  <- make_clean_plot(plot_data_training, "scRNA_surface", "scRNA_core", "padj_WTD", "scRNA (Training Genes)")
-
-# 4. Generate the plots for Validation Genes
-p_val_iss <- make_clean_plot(plot_data_validation, "iss_surface", "iss_core", "padj_ISS", "ISS (Validation Genes)")
-p_val_sc  <- make_clean_plot(plot_data_validation, "scRNA_surface", "scRNA_core", "padj_WTD", "scRNA (Validation Genes)")
-
-# 5. Arrange them using patchwork
-# This creates a layout with training in the first row and validation in the second
+# Combine with Patchwork
 (p_train_iss + p_train_sc) / (p_val_iss + p_val_sc)
 ```
-

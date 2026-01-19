@@ -60,8 +60,7 @@ iss_obj_invasive <- subset(iss_obj_invasive, cells = colnames(iss_obj_invasive)[
 n_after <- ncol(iss_obj_invasive)
 cat(round((n_before - n_after)/n_before, 2)*100, "% cells removed (NAs and 'Other').\n")
 
-# CRITICAL: Drop unused factor levels
-# If we don't do this, R will still think "Other" is a possible category with 0 cells
+# ´Drop unused factor levels (R will still think "Other" is a possible category with 0 cells)
 iss_obj_invasive@meta.data[[classification_method]] <- factor(
   as.character(iss_obj_invasive@meta.data[[classification_method]])
 )
@@ -70,43 +69,54 @@ iss_obj_invasive@meta.data[[classification_method]] <- factor(
 
 # Normalise the matrix
 ```{r}
-iss_obj_invasive <- NormalizeData(iss_obj_invasive)
-iss_obj_invasive <- ScaleData(iss_obj_invasive)
+# Manual Log Transformation
+# 1. Pull the raw counts
+raw_counts <- GetAssayData(iss_obj_invasive, assay = "RNA", layer = "counts")
+
+# 2. log transformation without scaling/centering
+log_transformed_counts <- log1p(raw_counts)
+
+# 3. Place into 'data' layer for downstream extraction
+iss_obj_invasive <- SetAssayData(
+  iss_obj_invasive, 
+  layer = "data", 
+  new.data = log_transformed_counts
+)
 ```
 
 # Extract normalised counts, add surface_class column
 ```{r}
 inv_tumour_expr <- as.data.frame(t(as.matrix(LayerData(iss_obj_invasive, layer = "data"))))
 
-# Dynamically assign the class column based on config
 inv_tumour_expr$surface_class <- iss_obj_invasive@meta.data[, classification_method]
 rownames(inv_tumour_expr) <- iss_obj_invasive@meta.data[, 'cell_id']
 
-# Ensure surface_class is a factor for caret/LDA
-inv_tumour_expr$surface_class <- as.factor(inv_tumour_expr$surface_class)
+# use only the surface/core cells (filter others)
+inv_tumour_expr <- inv_tumour_expr %>%
+  filter(surface_class %in% c("Surface", "Core"))
 ```
 
 
 # Split full dataset into training / test datasets (80/20 split)
 ```{r}
-# --- Configuration for Repeated CV ---
+# Configuration for Repeated CV 
 n_repeats <- 10       # Number of times to repeat the full 5-fold cycle
 n_folds   <- 5        # 5-fold means 80/20 split
 set.seed(lda_params$seed)
 
-# Initialize storage
+# Initialise storage
 all_predictions <- list()
 
 cat("Starting Repeated", n_folds, "-Fold Cross-Validation (", n_repeats, "repeats )...\n")
 
-# --- Outer Loop: Repeats ---
+# Outer Loop: Repeats 
 for (r in 1:n_repeats) {
   
   # Create Folds for this repeat
   # list = TRUE returns indices for training, so we use returnTrain=FALSE to get Test indices
   folds <- createFolds(inv_tumour_expr$surface_class, k = n_folds, list = TRUE, returnTrain = FALSE)
   
-  # --- Inner Loop: K-Folds ---
+  # Inner Loop: K-Folds 
   for (k in 1:n_folds) {
     
     # 1. Split Data
@@ -205,8 +215,8 @@ final_genes <- names(keep_genes_final)[keep_genes_final]
 # 2. Fit Final LDA
 fit_lda_final <- lda(surface_class ~ ., data = full_data_subset[, c("surface_class", final_genes)])
 
-saveRDS(fit_lda_final, file = "janesick_2023/processed/fit_lda_final.RDS")
-saveRDS(final_genes, file = "janesick_2023/processed/genes_to_keep_final.RDS")
+saveRDS(fit_lda_final, file = "janesick_2023/processed/fit_lda.RDS")
+saveRDS(final_genes, file = "janesick_2023/processed/genes_to_keep.RDS")
 ```
 
 # plot first 2 linear discriminants
@@ -321,6 +331,6 @@ ggplot(plot_data, aes(x = y_centroid, y = x_centroid, color = prob_surface)) +
                         name = "Prob(Surface)") +
   coord_fixed(ylim = c(3850, 0)) +
   theme_minimal() +
-  labs(title = "LDA Surface Probability Map", subtitle = "White = High Uncertainty (Transition Zone)")
+  labs(title = "LDA Surface Probability Map", subtitle = "Black = High Uncertainty (Transition Zone)")
 ```
 

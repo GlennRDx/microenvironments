@@ -5,6 +5,7 @@ output:
 geometry: margin=0.2in
 ---
 
+# 1. Load files & Libraries
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
 # Load config.R
 source("config.R") 
@@ -19,7 +20,6 @@ library(data.table, quietly = T)
 library(ggplot2)
 library(caret)
 ```
-
 ```{r}
 # Load Data
 # iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
@@ -27,7 +27,7 @@ iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
 ```
 
-# Select 2/3 of the shared genes for training
+# 2. Assign 2/3 of the shared genes (between ISS/scRNA) as training training genes
 ```{r}
 # Randomly select 2/3 of the shared genes for training
 set.seed(lda_params$seed)
@@ -37,39 +37,61 @@ train_genes <- sample(shared_genes, size = floor(length(shared_genes) * lda_para
 saveRDS(train_genes, file = "janesick_2023/processed/train_genes.RDS")
 ```
 
-# Filter confounding cells
+# 3. Filter confounding cells
 - Cells labelled shallow core
 - Cells labelled dead/dying cells (NAs in surface_classification_clusters)
 ```{r}
-#calc number of cells before filt.
-n_before <- ncol(iss_obj_invasive)
-
-# filter out cells
-# iss_obj_invasive <- subset(iss_obj_invasive, subset = depth_category != "Shallow Core")
-
-iss_obj_invasive <- subset(iss_obj_invasive, subset = !is.na(surface_class_clusters))
-
-n_after <- ncol(iss_obj_invasive)
-
-cat(round((n_before - n_after)/n_before, 2)*100, "% cells removed.")
+# #calc number of cells before filt.
+# n_before <- ncol(iss_obj_invasive)
+# 
+# # filter out cells
+# # iss_obj_invasive <- subset(iss_obj_invasive, subset = depth_category != "Shallow Core")
+# 
+# iss_obj_invasive <- subset(iss_obj_invasive, subset = !is.na(surface_class_clusters))
+# 
+# n_after <- ncol(iss_obj_invasive)
+# 
+# cat(round((n_before - n_after)/n_before, 2)*100, "% cells removed.")
 ```
 
-# Normalise the matrix
+# 4. Normalise the matrix with log transformation
 ```{r}
-iss_obj_invasive <- NormalizeData(iss_obj_invasive)
-iss_obj_invasive <- ScaleData(iss_obj_invasive)
+# Manual Log Transformation
+# 1. Pull the raw counts
+raw_counts <- GetAssayData(iss_obj_invasive, assay = "RNA", layer = "counts")
+
+# 2. log transformation without scaling/centering
+log_transformed_counts <- log1p(raw_counts)
+
+# 3. Place into 'data' layer for downstream extraction
+iss_obj_invasive <- SetAssayData(
+  iss_obj_invasive, 
+  layer = "data", 
+  new.data = log_transformed_counts
+)
 ```
 
-# Extract normalised counts, add surface_class column
+# 5. Extract normalised counts, add surface_class column
 ```{r}
-inv_tumour_expr <- as.data.frame(t(as.matrix(LayerData(iss_obj_invasive, layer = "data"))))
+# 1. Extract expression
+expr_mat <- t(as.matrix(LayerData(iss_obj_invasive, layer = "data")))
+inv_tumour_expr <- as.data.frame(expr_mat)
 
-inv_tumour_expr$surface_class <- iss_obj_invasive@meta.data[, classification_method]
-rownames(inv_tumour_expr) <- iss_obj_invasive@meta.data[, 'cell_id']
+# 2. Extract metadata with row names explicitly
+meta_data <- iss_obj_invasive@meta.data[, c(classification_method, "cell_id"), drop = FALSE]
+colnames(meta_data)[1] <- "surface_class" # Rename dynamic column
+
+# 3. Merge safely
+inv_tumour_expr <- merge(inv_tumour_expr, meta_data, by = "row.names")
+rownames(inv_tumour_expr) <- inv_tumour_expr$Row.names
+inv_tumour_expr$Row.names <- NULL
+
+# 4. Filter
+inv_tumour_expr <- inv_tumour_expr %>%
+  filter(surface_class %in% c("Surface", "Core"))
 ```
 
-
-# Split full dataset into training / test datasets (80/20 split)
+# 6. Split full dataset into training / test datasets (80/20 split)
 ```{r}
 # Take 80% for training dataset
 inv_gene_exp_train <- inv_tumour_expr %>%
@@ -93,14 +115,13 @@ rownames(inv_gene_exp_test) <- inv_gene_exp_test$cell_id
 inv_gene_exp_test$cell_id <- NULL
 ```
 
-# Filter genes to include only the training genes
+# 7. Filter genes to include only the training genes
 ```{r}
 inv_gene_exp_train <- inv_gene_exp_train %>%
   dplyr::select(surface_class, all_of(train_genes))
 ```
 
-
-# Feature selection  
+# 8. Feature selection  
  - Remove genes that have zero variance and thus are not discriminatory between groups.  
 ```{r}
 gene_cols <- setdiff(colnames(inv_gene_exp_train), "surface_class")
@@ -135,15 +156,14 @@ inv_gene_exp_filtered <- inv_gene_exp_filtered %>%
   filter(!is.na(surface_class))
 ```
 
-
-# Fit LDA model
+# 9. Fit LDA model
 ```{r}
 fit_lda <- lda(surface_class ~ ., inv_gene_exp_filtered)
 
 saveRDS(fit_lda, file = "janesick_2023/processed/fit_lda.RDS")
 ```
 
-# Plot first two linear discriminants
+# 10. Plot LDA
 ```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # Define figure directory based on your request
 fig_subdir <- file.path(figs_dir, "0.3.1")
@@ -193,7 +213,7 @@ ggsave(
 )
 ```
 
-# Predict surface_class with LDA model
+# 11. Predict test set surface_class using the fitted LDA model
 ```{r}
 # Subset test data to only include genes used in the LDA model
 inv_gene_exp_test_filtered <- inv_gene_exp_test %>%
@@ -249,44 +269,45 @@ capture.output(
 )
 ```
 
-```{r}
+# Plot test results
+```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
 # 1. Prepare Plotting Data
 # Extract full metadata from the Seurat object
 plot_meta <- iss_obj_invasive@meta.data
 
 # Create a column for Classification Status
 # Default to "Correct" (this covers background cells and correct predictions)
-plot_meta$classification_status <- "Correct"
+plot_meta$classification_status <- "Training"
 
 # Identify Test Set cells
 test_cells <- rownames(inv_gene_exp_test)
 
-# Assign status for Test Set cells
-# Logic: If truth == prediction, keep "Correct", otherwise label the error
 plot_meta[test_cells, "classification_status"] <- ifelse(
   inv_gene_exp_test$surface_class == inv_gene_exp_test$predicted_surface_class,
-  "Correct",
+  "Test Correct",
   paste0("False ", inv_gene_exp_test$predicted_surface_class)
 )
 
 # 2. Setup Colors
-colors <- c("Correct" = "grey80", "False Surface" = "red", "False Core" = "black")
+colors <- c("Training" = "grey90", "Test Correct" = "green", "False Surface" = "red", "False Core" = "blue")
 
 # 3. Plot
 ggplot(plot_meta, aes(x = y_centroid, y = x_centroid, color = classification_status)) +
-    # Layer 1: Correct (Background + Correctly classified)
-    geom_point(data = subset(plot_meta, classification_status == "Correct"), 
-               size = 1) +
-    # Layer 2: False Surface (Intermediate Size)
+    # Layer 1: Training
+    geom_point(data = subset(plot_meta, classification_status == "Training"), 
+               size = 0.01) +
+    # Layer 2: Correct Predictions
+    geom_point(data = subset(plot_meta, classification_status == "Test Correct"), 
+               size = 0.01) +
+    # Layer 3: False Surface
     geom_point(data = subset(plot_meta, classification_status == "False Surface"), 
-               size = 1) +
-    # Layer 3: False Core (Largest Size)
+               size = 0.01) +
+    # Layer 4: False Core
     geom_point(data = subset(plot_meta, classification_status == "False Core"), 
-               size = 1) +
+               size = 0.01) +
     scale_color_manual(values = colors) +
     # Swap xlim to ylim and apply reversal to the new y-axis
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
     guides(color = guide_legend(override.aes = list(size = 3)))
 ```
-

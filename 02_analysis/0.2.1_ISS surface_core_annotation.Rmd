@@ -5,6 +5,7 @@ output:
 geometry: margin=0.2in
 ---
 
+# 1. Load files & Libraries
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
 # Load config.R
 source("config.R") 
@@ -32,7 +33,6 @@ library(paletteer)
 library(scry, quietly = T) # bioconductor
 library(SingleCellExperiment, quietly = T) # bioconductor
 ```
-
 ```{r}
 # Load data
 iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
@@ -40,103 +40,7 @@ iss_meta <- readRDS("janesick_2023/raw_clean/iss_meta_clean.RDS")
 setDT(iss_meta) # Set to data.table for speed
 ```
 
-# Plotting function
-```{r}
-plot_surface_classification <- function(data, colour_col,
-                                        show_zoom = FALSE,
-                                        centre_x = iss_params$centre_x,
-                                        centre_y = iss_params$centre_y,
-                                        radius = iss_params$radius,
-                                        custom_colours = NULL,
-                                        continuous = FALSE,
-                                        base_size = 1,
-                                        title = "") {
-  
-  
-  
-  # 1. Main Spatial Plot w/ Classifications (p1)
-  p1 <- ggplot(data, aes(x = x_centroid, y = y_centroid)) +
-    scale_x_reverse() +
-    theme_minimal() +
-    labs(title = title) +
-    theme(
-      legend.position = "bottom",
-      plot.margin = margin(0,0,0,0),
-      plot.title = element_text(hjust = 0.5, face = "bold", size = 14 * base_size),
-      axis.title = element_text(size = 12 * base_size),
-      axis.text = element_text(size = 10 * base_size),
-      legend.title = element_text(size = 11 * base_size),
-      legend.text = element_text(size = 10 * base_size)
-    )
-    
-  # Add points (Continuous vs Discrete)
-  if (continuous) {
-    p1 <- p1 +geom_point(aes_string(color = colour_col), size = 0.01, alpha = 1) +
-      scale_color_gradientn(colors = paletteer_c("grDevices::Blue-Red 3", 30), na.value = "grey75")
-  } else {
-    p1 <- p1 + geom_point(aes_string(color = colour_col), size = 0.01, alpha = 1) +
-      guides(color = guide_legend(override.aes = list(shape = 16, size = 3)))
-    
-    if(!is.null(custom_colours)) {
-      p1 <- p1 + scale_color_manual(values = custom_colours, na.value = "grey75")
-    }
-  }
-  #Return the only the main plot if no zoom is requested
-  if (!show_zoom) {
-    return(p1)
-  }
-  
-  
-  
-  # 2. Create zoomed in plot showing neighbourhood radius
-  circle <- data.frame(
-    x = centre_x + radius * cos(seq(0, 2*pi, length.out = 500)),
-    y = centre_y + radius * sin(seq(0, 2*pi, length.out = 500))
-  )
-  
-  # add small circle to the main plot (to show where is being zoomed)
-  p1 <- p1 + geom_path(data = circle, aes(x = x, y = y), color = "black", linewidth = 0.3)
-  
-  # Create zoomed in plot (p2)
-  zoom_margin <- 2.5 * radius
-  p2 <- ggplot(data, aes(x = x_centroid, y = y_centroid)) + 
-    geom_path(data = circle, aes(x = x, y = y), color = "black", linewidth = 0.5) +
-    scale_x_reverse() +
-    coord_fixed(xlim = c(centre_x - zoom_margin, centre_x + zoom_margin),
-                ylim = c(centre_y - zoom_margin, centre_y + zoom_margin)) +
-    labs(x = NULL, y = NULL, title = "Zoomed View") +
-    theme_bw() +
-    theme(
-      legend.position = "none", 
-      plot.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-      panel.grid = element_blank(),
-      axis.text = element_text(size = 6 * base_size),
-      axis.title = element_text(size = 7 * base_size), # In case labels are added later
-      plot.title = element_text(size = 8 * base_size, hjust = 0.5)
-    )
-    
-  
-  # Add points to inset
-   if (continuous) {
-     p2 <- p2 + geom_point(aes_string(color = colour_col), size = 2 * base_size, alpha = 0.8, shape = 16) +
-       scale_color_gradientn(colors = paletteer_c("grDevices::Blue-Red 3", 30), na.value = "grey75")
-   } else {
-     p2 <- p2 + geom_point(aes_string(color = colour_col), size = 2 * base_size, alpha = 0.8, shape = 16)
-      if(!is.null(custom_colours)) {
-        p2 <- p2 + scale_color_manual(values = custom_colours, na.value = "grey75")
-      }
-   }
-  
-  # combine with cowplot
-  plot_ratio <- 7.87 / 6.5
-  final_plot <- ggdraw(p1) +
-    draw_plot(p2, x = 0.12, y = 0.20, width = 0.3, height = 0.3 * plot_ratio)
-  
-  return(final_plot)
-}
-```
-  
-# METHOD 1: RADIUS SEARCH
+# 2. Radius Method
 ```{r}
 start_time <- Sys.time()
 
@@ -177,7 +81,8 @@ cat("Classification took:", round(end_time - start_time, 2))
 table(iss_meta$surface_class_radius)
 ```
 
-```{r}
+#### Radius Method Plots
+```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
 mean_val <- mean(iss_meta$neighbour_count, na.rm = T)
 p1 <- ggplot(subset(iss_meta, !is.na(neighbour_count)), aes(x = neighbour_count)) +
   geom_bar(fill = "#AA4A44", color = "black", width = 1, linewidth = 0) +
@@ -191,15 +96,9 @@ p1 <- ggplot(subset(iss_meta, !is.na(neighbour_count)), aes(x = neighbour_count)
     subtitle = paste("Radius =", iss_params$radius, "\nMean n =", round(mean_val, 2)),
     x = "Number of Neighbours in Radius",
     y = "Count of Cells"
-  )
+  ); p1
 
-p1
-
-ggsave(file.path(fig_subdir, "p1_dist_of_counts_of_cells_with_n_neighbours_in_radius.png"), 
-       plot = p1, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
-```
-
-```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
+ggsave(file.path(fig_subdir, "p1_dist_of_counts_of_cells_with_n_neighbours_in_radius.png"), plot = p1, dpi = 300)
 p2 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_radius)) +
     # Layer 1: Plot only "Other" first
     geom_point(data = subset(iss_meta, surface_class_radius == "Other"), 
@@ -211,16 +110,12 @@ p2 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class
     # Swap xlim to ylim and apply reversal to the new y-axis
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
-    guides(color = guide_legend(override.aes = list(size = 2)))
+    guides(color = guide_legend(override.aes = list(size = 2))); p2
 
-p2
-
-ggsave(file.path(fig_subdir, "p2_ME_annotations_radius_method.png"), 
-       plot = p2, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
+ggsave(file.path(fig_subdir, "p2_ME_annotations_radius_method.png"), plot = p2, dpi = 300)
 ```
 
-
-# METHOD 2: KNN SEARCH
+# 3. KNN Method
 ```{r}
 # 1. Get Indices
 invasive_idx <- which(iss_meta$Annotation == "Invasive_Tumor")
@@ -249,6 +144,7 @@ iss_meta$surface_class_nn <- ifelse(
 table(iss_meta$surface_class_nn)
 ```
 
+#### KNN Method Plots
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
 p3 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class_nn)) +
     # Layer 1: Plot only "Other" first
@@ -261,15 +157,12 @@ p3 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = surface_class
     # Swap xlim to ylim and apply reversal to the new y-axis
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
-    guides(color = guide_legend(override.aes = list(size = 2)))
+    guides(color = guide_legend(override.aes = list(size = 2))); p3
 
-p3
-
-ggsave(file.path(fig_subdir, "p3_ME_annotations_knn_method.png"), 
-       plot = p3, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
+ggsave(file.path(fig_subdir, "p3_ME_annotations_knn_method.png"), plot = p3, dpi = 300)
 ```
 
-# METHOD 3: TUMOUR CELL DEPTH GRADIENT
+# 4.Tumour Cell depth Method
 ```{r}
 iss_meta$tumour_depth <- NA_real_
 
@@ -291,6 +184,8 @@ if (any(is_core) && any(is_surface)) {
 
 summary(iss_meta[iss_meta$surface_class_radius == "Core",]$tumour_depth)
 ```
+
+#### Tumour Cell depth Method Plots
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
 p4 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid)) +
     # Layer 1: Plot "Other" (NA depth) first as grey
@@ -306,14 +201,12 @@ p4 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid)) +
     # Swap xlim to ylim and apply reversal to the new y-axis
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
-    labs(color = "Depth")
+    labs(color = "Depth"); p4
 
-p4
-
-ggsave(file.path(fig_subdir, "p4_ME_annotations_depth_method.png"), 
-       plot = p4, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
+ggsave(file.path(fig_subdir, "p4_ME_annotations_depth_method.png"), plot = p4, dpi = 300)
 ```
 
+#### Annotate Shallow Core Cells
 ```{r}
 # 1. Create a new categorical column for plotting
 iss_meta$depth_category <- "Other"
@@ -331,36 +224,6 @@ iss_meta$depth_category[iss_meta$surface_class_radius == "Core" & iss_meta$tumou
 # Check the counts
 table(iss_meta$depth_category)
 ```
-
-```{r, fig.width=7.87, fig.height = 6.5, dpi=300, dev='tiff', out.width='100%'}
-p5 <- plot_surface_classification(
-  data = iss_meta,
-  colour_col = "depth_category",
-  continuous = FALSE,
-  custom_colours = c(
-    "Surface" = "#C90065",       # Standard Pink
-    "Shallow Core" = "darkblue",     # HIGHLIGHT COLOR (Bright and distinct)
-    "Deep Core" = "#fac0da",     # Lighter Pink (Background core)
-    "Other" = "grey75"
-  ),
-  title = "Highlighting Shallow Core Cells (Depth ≤ 5)"
-)
-
-ggsave(
-  filename = file.path(fig_subdir, "p5_identify_shallow_core_cells.png"),
-  plot = p5,
-  dpi = 300,
-  width = 4*7.87,
-  height = 4*6,
-  scale  = 0.5
-)
-```
-
-```{r}
-table(iss_meta$depth_category)
-```
-
-
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
 p5 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = depth_category)) +
     # Layer 1: Plot only "Other" first
@@ -373,15 +236,12 @@ p5 <- ggplot(iss_meta, aes(x = y_centroid, y = x_centroid, color = depth_categor
     # Swap xlim to ylim and apply reversal to the new y-axis
     coord_fixed(ylim = c(3850, 0)) +
     theme_minimal() +
-    guides(color = guide_legend(override.aes = list(size = 2)))
+    guides(color = guide_legend(override.aes = list(size = 2))); p5
 
-p5
-
-ggsave(file.path(fig_subdir, "p5_identify_shallow_core_cells.png"), 
-       plot = p5, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
+ggsave(file.path(fig_subdir, "p5_identify_shallow_core_cells.png"), plot = p5, dpi = 300)
 ```
 
-# METHOD 4: GENE EXPRESSION CLUSTERING
+# 5. Gene Expression Clustering Method
 ```{r}
 # 1. Create iss seurat object
 iss_obj <- CreateSeuratObject(counts = iss_expr, meta.data = as.data.frame(iss_meta))
@@ -402,17 +262,16 @@ print("Standard Workflow Complete")
 # 3. Visualise Clusters
 p6 <- DimPlot(iss_obj_invasive, label = F) +
   scale_color_viridis_d(option = "turbo") +
-  ggtitle("Leiden Clustering")
-p6
+  ggtitle("Leiden Clustering"); p6
 
 # 4. Map Clusters back to Metadata
 cluster_map <- Idents(iss_obj_invasive)
 iss_meta$cluster <- as.character(cluster_map[match(iss_meta$cell_id, names(cluster_map))])
 
-ggsave(file.path(fig_subdir, "p6_leiden_cluster_tumour_cells.png"), 
-       plot = p6, dpi = 300, width = 7.87*1, height = 6.5*1)
+ggsave(file.path(fig_subdir, "p6_leiden_cluster_tumour_cells.png"), plot = p6, dpi = 300)
 ```
 
+#### Clustering Method Plots
 ```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
 # Get turbo colour palette
 clusters <- sort(unique(na.omit(iss_meta$cluster)))
@@ -474,13 +333,9 @@ ggsave(file.path(fig_subdir, "p7_ME_annotations_cluster_method_labelled.png"),
        plot = p8, dpi = 300, width = 7.87*1.75, height = 6.5*1.75)
 ```
 
-
-# SAVE CLASSIFICATIONS TO SEURAT OBJECT
-- iss_obj_invasive already has gene expression counts, radius/KNN/depth metadata, and PCA/UMAP coords
-- Missing: "surface_class_clusters". So we add that back then we can save the RDS files.
+# 6. Save Data
 ```{r}
 # Save RDS
 saveRDS(iss_obj_invasive, file ="/Users/glero527/Documents/microenvironments/01_data/janesick_2023/processed/iss_obj_invasive.RDS")
 saveRDS(iss_meta, file = "/Users/glero527/Documents/microenvironments/01_data/janesick_2023/processed/iss_meta.RDS")
 ```
-

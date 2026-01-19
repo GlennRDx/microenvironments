@@ -10,12 +10,12 @@ classification_method <- "surface_class_clusters" # Options: "surface_class_nn",
 wts_params <- list(
   n_subsamples = 1000, # Number of cells to keep per cell type (to reduce computational load)
   n_top_genes = 4000,   # Number of highly deviant genes for selection
-  n_dims    = 1:15     # Number of dimensions to use for dimensionality reduction techniques (PCA, UMAP, t-SNE). Number is based on elbow plot.
+  dims    = 1:15     # Number of dimensions to use for dimensionality reduction techniques (PCA, UMAP, t-SNE). Number is based on elbow plot.
 )
 
 # 0.2.1
 iss_params <- list(
-  radius      = 35,    # Radius for neighbourhood definition
+  radius      = 20,    # Radius for neighbourhood definition
   knn         = 25,    # Number of neighbours for KNN method
   centre_x    = 3249.27,  # Center X coordinate for zooming/plotting
   centre_y    = 2027.26,  # Center Y coordinate for zooming/plotting
@@ -55,5 +55,5 @@ prediction_params <- list(
 # 0.5.1
 validation_params <- list(
   n_pseudo_reps = 2,      # Number of pseudo-replicates
-  marker_method = "wilcox"  # Options: "MAST", "wilcox", "DESeq2"
+  marker_method = "MAST"  # Options: "MAST", "wilcox", "DESeq2"
 )

@@ -5,6 +5,7 @@ output:
 geometry: margin=0.2in
 ---
 
+# 1. Load files & Libraries
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
 # Load config.R
 source("config.R") 
@@ -21,18 +22,15 @@ library(ggplot2)
 library(tidyverse)
 library(data.table)
 ```
-
-# load pretrained LDA model & list of genes used
-
 ```{r}
-fit_lda <- readRDS("janesick_2023/processed/fit_lda_final.RDS")
+# load pretrained LDA model & list of genes used
+fit_lda <- readRDS("janesick_2023/processed/fit_lda.RDS")
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
-genes_to_keep <- readRDS("janesick_2023/processed/genes_to_keep_final.RDS")
-wts_obj <- readRDS("janesick_2023/raw_clean/wts_obj_clean.RDS")
+genes_to_keep <- readRDS("janesick_2023/processed/genes_to_keep.RDS")
+wts_obj <- readRDS("janesick_2023/processed/wts_obj_processed.RDS")
 ```
 
-# Create new WTS object with quantile matched data
-
+# 2. Replace counts with quantile matched counts
 ```{r}
 wts_expr_clean <- fread("janesick_2023/raw/scRNAseq_data_quantile_matched.txt") %>% as.data.frame()
 rownames(wts_expr_clean) <- wts_expr_clean$V1
@@ -47,7 +45,6 @@ wts_expr_clean$V1 <- NULL
 wts_obj <- subset(wts_obj, features = shared_genes)
 ```
 
-
 ```{r}
 # covert quantile matched counts to sparse matrix
 counts_matrix_sparse <- as(as.matrix(wts_expr_clean), "dgCMatrix")
@@ -58,37 +55,44 @@ wts_obj[["RNA"]] <- SetAssayData(object = wts_obj[["RNA"]],
                              new.data = counts_matrix_sparse)
 ```
 
-# Check gene counts of random genes
-```{r}
-# raw_counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
-# raw_exp <- as.matrix(t(raw_counts))
-# raw_df <- as.data.frame(raw_exp)
-# 
-# p <- ggplot(raw_df, aes(x=ABCC11)) +
-#   geom_density()
-# p
-
-```
-
-
 # Filter to invasive tumour cells only
 
 ```{r}
 wts_obj_invasive <- subset(wts_obj, subset = Annotation %in% "Invasive_Tumor")
 ```
 
-# Normalise
+# 3. Normalise
 ```{r}
-wts_obj_invasive <- NormalizeData(wts_obj_invasive)
-wts_obj_invasive <- ScaleData(wts_obj_invasive)
+# Manual CPM Normalisation + Log Transformation
+
+# 1. Extract raw counts (sparse matrix)
+raw_counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
+
+# 2. Calculate library size (total counts per cell)
+lib_size <- colSums(raw_counts)
+
+# 3. Normalise to CPM (Counts Per Million)
+# Transpose twice to divide columns (cells) by the library size vector efficiently
+cpm_counts <- t(t(raw_counts) / lib_size) * 1e6
+
+# 4. Log transform: log(CPM + 1)
+# Using log1p (natural log) to match standard Seurat conventions
+log_cpm_counts <- log1p(cpm_counts)
+
+# 5. Inject back into the 'data' layer
+wts_obj_invasive <- SetAssayData(
+  object = wts_obj_invasive, 
+  layer = "data", 
+  new.data = log_cpm_counts
+)
 ```
+
 # Extract normalised count matrix in preparation for prediction
 ```{r}
 inv_tumour_expr <- as.data.frame(t(as.matrix(LayerData(wts_obj_invasive, layer = "data"))))
 ```
 
-
-# Align genes between two data sets
+# 4. Align genes between two data sets
 ```{r}
 genes_in_scrna <- intersect(genes_to_keep, colnames(inv_tumour_expr))
 cat("\nGene alignment summary:\n")
@@ -100,8 +104,7 @@ expr_df_aligned <- inv_tumour_expr[, genes_to_keep]
 expr_df_aligned <- expr_df_aligned %>%
   dplyr::select(all_of(genes_to_keep))
 ```
-
-# Apply LDA model to predict surface / core labels
+# 5. Apply LDA model to predict surface / core labels
 ```{r}
 # Make predictions
 lda_predictions <- predict(fit_lda, newdata = expr_df_aligned)
@@ -141,13 +144,13 @@ cat("Filtered out (ambiguous):", nrow(results_df) - nrow(results_df_filtered), "
 cat("High-confidence class distribution:\n")
 print(table(results_df_filtered$predicted_class))
 ```
-
+# 6. Plot LDA
 ```{r}
-# --- Define Figure Directory ---
+# Define Figure Directory 
 fig_subdir <- file.path(figs_dir, "0.4.1")
 if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
 
-# --- Prepare Stats for Plot Labels ---
+# Prepare Stats for Plot Labels 
 # Count stats from the full results_df
 n_high_conf_core <- sum(results_df$predicted_class == "Core" & results_df$status == "High Confidence")
 n_high_conf_surf <- sum(results_df$predicted_class == "Surface" & results_df$status == "High Confidence")
@@ -169,7 +172,7 @@ method_labels <- c(
 current_label <- method_labels[classification_method]
 if(is.na(current_label)) current_label <- classification_method
 
-# --- Generate Plot ---
+# Generate Plot 
 p_pred <- ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
   geom_density(alpha = 0.5) +
   # Add lines for visual reference (you might want to adjust x-intercepts based on your data distribution)
@@ -197,31 +200,14 @@ p_pred <- ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
 print(p_pred)
 
 ggsave(
-  filename = file.path(fig_subdir, paste0("scRNA_LDA_projection_", classification_method, ".png")),
-  plot = p_pred,
-  dpi = 300,
-  width = 8,
-  height = 6
-)
+  filename = file.path(fig_subdir, paste0("scRNA_LDA_projection_", classification_method, ".png")), plot = p_pred, dpi = 300)
 ```
 
-# Use results_df (all predictions) to show the full distribution
-ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
-  geom_density(alpha = 0.5) +
-  geom_vline(xintercept = c(-1.0, 1.5), linetype = "dashed", color = "black") +
-  annotate("text", x = -1.5, y = 0.4, label = "High confidence\nCore", size = 3) +
-  annotate("text", x = 2.5, y = 0.4, label = "High confidence\nSurface", size = 3) +
-  annotate("text", x = 0.25, y = 0.5, label = "Ambiguous\nregion", size = 3, color = "gray30") +
-  theme_minimal() +
-  labs(title = "LDA Projection of scRNA-seq Predictions", 
-       x = "LD1", 
-       y = "Density",
-       fill = "Predicted Class")
 
-# Add Predictions to Seurat Object
+# 7. Add Predictions to Seurat Object
 ```{r}
 # Add predictions back to the invasive subset
-# Initialize all as NA
+# Initialise all as NA
 wts_obj_invasive$predicted_surface_class <- NA
 wts_obj_invasive$prob_core <- NA
 wts_obj_invasive$LD1_score <- NA

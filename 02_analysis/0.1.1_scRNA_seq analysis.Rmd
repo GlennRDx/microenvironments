@@ -5,11 +5,10 @@ output:
 geometry: margin=0.2in
 ---
 
+# 1. Load files & Libraries
 ```{r setup, include=FALSE, message = FALSE, warning = FALSE}
-# Load config.R
-source("config.R") 
-
-# Set root directory using the variable from config
+# Load config.R & Set dir
+source("config.R")
 knitr::opts_knit$set(root.dir = data_dir)
 
 # Figures Folder
@@ -29,25 +28,27 @@ library(RANN) # CRAN
 library(scry) # bioconductor
 library(SingleCellExperiment) # bioconductor
 ```
-
-# Load data
 ```{r}
+# Load Data
 wts_obj <- readRDS(file = "janesick_2023/raw_clean/wts_obj_clean.RDS")
 ```
 
-# QUALITY CONTROL
-### Created: 
-- histogram of count depth
-- Violin plot of MT genes
-- Scatter of Both plotted against each other coloured by cell type
+
+# 2. Quality Control
 
 ```{r}
-# QC
-# The [[ operator adds columns to object metadata. This is a good place to stash QC stats
-wts_obj[["percent.mt"]] <- PercentageFeatureSet(wts_obj, pattern = "^MT-") # calculates the percentage of gene expression is attributed to MT genes
+# Calculate QC metrics
+wts_obj[["percent.mt"]] <- PercentageFeatureSet(wts_obj, pattern = "^MT-") # perc. gene expression attributed to MT genes
+wts_obj$log1p_nCount_RNA <- log1p(wts_obj$nCount_RNA)
+wts_obj$log1p_nFeature_RNA <- log1p(wts_obj$nFeature_RNA)
+
+# Calculate pct counts in top 20 genes for each cell (complexity metric)
+gene_sums <- rowSums(GetAssayData(wts_obj, assay = "RNA", layer = "counts"))
+top20_genes <- names(sort(gene_sums, decreasing = TRUE)[1:20])
+top20_counts <- colSums(wts_obj@assays$RNA$counts[top20_genes, ])
+wts_obj$pct_counts_top20genes <- (top20_counts / wts_obj$nCount_RNA) * 100
 ```
 
-### 
 ```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # 1. Histogram of nCount_RNA
 p1 <- ggplot(wts_obj@meta.data, aes(x = nCount_RNA)) +
@@ -57,21 +58,8 @@ p1 <- ggplot(wts_obj@meta.data, aes(x = nCount_RNA)) +
   theme(
     plot.title = element_text(size = 14),
     axis.title = element_text(size = 12),
-    axis.text  = element_text(size = 11)
-  )
-p1
+    axis.text  = element_text(size = 11)); p1
 
-ggsave(
-  filename = file.path(fig_subdir, "p1_dist_total_counts.tiff"),
-  plot = p1,
-  width = 7.87, 
-  height = 6,
-  dpi = 300,
-  compression = "lzw" # Good for TIFF size
-)
-```
-
-```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # 2. Violin plot of percentage mitochondrial genes
 p2 <- ggplot(wts_obj@meta.data, aes(x = Annotation, y = percent.mt, fill = Cancerous)) +
   geom_violin(trim = FALSE, alpha = 0.7) +
@@ -79,19 +67,8 @@ p2 <- ggplot(wts_obj@meta.data, aes(x = Annotation, y = percent.mt, fill = Cance
   scale_fill_manual(values = c("TRUE" = "#E6893D", "FALSE" = "steelblue")) +
   theme_minimal() +
   labs(x = "Annotation", y = "Percent MT") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)); p2
 
-ggsave(
-  filename = file.path(fig_subdir, "p2_pct_MT_genes.tiff"),
-  plot = p2,
-  width = 7.87, 
-  height = 6,
-  dpi = 300,
-  compression = "lzw" # Good for TIFF size
-)
-```
-
-```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # 3. Scatter plot of three metrics together
 p3 <- ggplot(wts_obj@meta.data, aes(x = nCount_RNA, y = nFeature_RNA, color = Annotation)) +
   geom_point(alpha = 0.6, size = 1) +
@@ -102,140 +79,39 @@ p3 <- ggplot(wts_obj@meta.data, aes(x = nCount_RNA, y = nFeature_RNA, color = An
   labs (title = 'Seq. depth vs num. detected genes coloured by cell type',
         x = 'nCount_RNA',
         y = 'nFeature_RNA',
-        color = 'Annotation')
+        color = 'Annotation'); p3
 
-ggsave(
-  filename = file.path(fig_subdir, "p3_seq_depth_vs_num_detected_genes.tiff"),
-  plot = p3,
-  width = 7.87, 
-  height = 6,
-  dpi = 300,
-  compression = "lzw" # Good for TIFF size
-)
+ggsave(filename = file.path(fig_subdir, "p1_dist_total_counts.png"), plot = p1, dpi = 300)
+ggsave(filename = file.path(fig_subdir, "p2_pct_MT_genes.png"), plot = p2, dpi = 300)
+ggsave(filename = file.path(fig_subdir, "p3_seq_depth_vs_num_detected_genes.png"), plot = p3, dpi = 300)
 ```
-
-
-# Filtering low quality cells
-## Defined is_outlier function which:
-- Calculates the median value of a metric (i.e. a list of values. Could be n_counts or n_features)
-- Calculates the absolute difference between each observation and the median value (absolute deviations)
-- Calculate the median of these absolute deviations (MAD)
-- Any values that fall n MADs from the median value of the metric is labelled an outlier
-
-## is_outlier function is applied
-
-Might want to remove the absolute cutoff of perc mt genes as it is redundant since we detect outlier cells by perc. mt genes and filter them out.
-Also might want to treat each cell type separately as each has different expression profiles for mt genes.
-
-### Method 1 Results
-! [Method 1 FIltering](/home/glennrdx/Documents/lab_projects/microenvironments/03_figures/QC/QC_method1.png)
-### Method 2 Results
-! [Method 2 FIltering](/home/glennrdx/Documents/lab_projects/microenvironments/03_figures/QC/QC_method2.png)
+#### Filtering low quality cells
 ```{r}
-#### Shared Code ####
 # Define function to detect outliers using MAD
-is_outlier <- function(metric, nmads) {
-  M <- metric
-  med <- median(M, na.rm = TRUE)
-  mad_val <- mad(M, na.rm = TRUE)
-  (M < (med - nmads * mad_val)) | (M > (med + nmads * mad_val))
+is_outlier <- function(metric, nmads) {  
+  med_val <- median(metric, na.rm = TRUE)
+  mad_val <- mad(metric, na.rm = TRUE)
+  return((metric < (med_val - nmads * mad_val)) | (metric > (med_val + nmads * mad_val)))
 }
 
-# Calculate log1p transformed metrics
-wts_obj$log1p_nCount_RNA <- log1p(wts_obj$nCount_RNA)
-wts_obj$log1p_nFeature_RNA <- log1p(wts_obj$nFeature_RNA)
-
-# Calculate pct counts in top 20 genes for each cell
-gene_sums <- rowSums(wts_obj@assays$RNA$counts)
-top20_genes <- names(sort(gene_sums, decreasing = TRUE)[1:20])
-top20_counts <- colSums(wts_obj@assays$RNA$counts[top20_genes, ])
-wts_obj$pct_counts_top20genes <- (top20_counts / wts_obj$nCount_RNA) * 100
-
-
-
-# #### METHOD 1 ####
-# # Create dataframe with all outlier checks (we don't attach this directly to the seurat object as we wish to see the number of outliers in each metric)
-# outliers_df <- data.frame(
-#   barcode = colnames(wts_obj),
-#   Annotation = wts_obj$Annotation,
-#   log1p_nCount_RNA = is_outlier(wts_obj$log1p_nCount_RNA, 5),
-#   log1p_nFeature_RNA = is_outlier(wts_obj$nFeature_RNA, 5),
-#   pct_counts_top20genes = is_outlier(wts_obj$pct_counts_top20genes, 5),
-#   percent_mt_mad = is_outlier(wts_obj$percent.mt, 3),
-#   percent_mt_abs = wts_obj$percent.mt > 8
-# )
-# 
-# #add general outlier column (i.e. if any metric shows an outlier the cell is labelled an outlier)
-# outliers_df$any_outlier <- (
-#   outliers_df$log1p_nCount_RNA |
-#   outliers_df$log1p_nFeature_RNA |
-#   outliers_df$pct_counts_top20genes |
-#   outliers_df$percent_mt_mad |
-#   outliers_df$percent_mt_abs
-# )
-# 
-# # attach 'general outlier' information to the seurat object
-# wts_obj$outlier <- outliers_df$any_outlier
-# 
-# # Add Cancerous column to outliers_df
-# outliers_df$Cancerous <- wts_obj$Cancerous[match(outliers_df$barcode, colnames(wts_obj))]
-# 
-# # Check that it was added
-# head(outliers_df[, c("barcode", "Annotation", "Cancerous")])
-# 
-# # Now summarise including Cancerous
-# summary_table <- outliers_df %>%
-#   group_by(Annotation) %>%
-#   summarise(
-#     Cancerous = unique(Cancerous),  # T/F for the cell type
-#     n_cells = n(),
-#     n_outliers = sum(any_outlier),
-#     pct_outliers = round(mean(any_outlier) * 100, 2),
-#     outlier_nCount = sum(log1p_nCount_RNA),
-#     outlier_nFeature = sum(log1p_nFeature_RNA),
-#     outlier_top20 = sum(pct_counts_top20genes),
-#     outlier_mt_mad = sum(percent_mt_mad),
-#     outlier_mt_abs = sum(percent_mt_abs)
-#   ) %>%
-#   arrange(desc(Cancerous))
-# summary_table
-# 
-# 
-# # Filter out the outliers
-# cells_to_keep <- (!wts_obj$outlier)
-# wts_obj <- subset(wts_obj, cells = WhichCells(wts_obj)[cells_to_keep])
-
-
-
-
-#### METHOD 2 ####
-outliers_df <- data.frame(
-  barcode = colnames(wts_obj),
-  Annotation = wts_obj$Annotation,
-  log1p_nCount_RNA = wts_obj$log1p_nCount_RNA,
-  log1p_nFeature_RNA = wts_obj$log1p_nFeature_RNA,
-  pct_counts_top20genes = wts_obj$pct_counts_top20genes,
-  percent_mt = wts_obj$percent.mt,
-  stringsAsFactors = FALSE
-)
-
-outliers_df <- outliers_df %>%
+# Identify Outliers
+outliers_df <- wts_obj@meta.data %>%
+  rownames_to_column("barcode") %>%
   group_by(Annotation) %>%
   mutate(
     outlier_nCount   = is_outlier(log1p_nCount_RNA, 5),
     outlier_nFeature = is_outlier(log1p_nFeature_RNA, 5),
     outlier_top20    = is_outlier(pct_counts_top20genes, 5),
-    outlier_mt_mad   = is_outlier(percent_mt, 3),
-    outlier_mt_abs   = percent_mt > 8,
-    any_outlier      = outlier_nCount | outlier_nFeature |
-      outlier_top20 | outlier_mt_mad | outlier_mt_abs
+    outlier_mt_mad   = is_outlier(percent.mt, 3),
+    outlier_mt_abs   = percent.mt > 8,
+    any_outlier      = outlier_nCount | outlier_nFeature | outlier_top20 | outlier_mt_mad | outlier_mt_abs
   ) %>%
   ungroup()
 
 # Add Cancerous column
 outliers_df$Cancerous <- wts_obj$Cancerous[match(outliers_df$barcode, colnames(wts_obj))]
 
-# Summarize per Annotation
+# Summarise per Annotation
 summary_table <- outliers_df %>%
   group_by(Annotation) %>%
   summarise(
@@ -256,21 +132,17 @@ print(summary_table)
 cells_to_keep <- outliers_df$barcode[!outliers_df$any_outlier]
 wts_obj <- subset(wts_obj, cells = cells_to_keep)
 ```
-
-
+#### Remove ambient genes
 ```{r}
-# REMOVE AMBIENT RNA
+# To be added later
 ```
 
+#### Remove doublets
 ```{r}
-# REMOVE DOUBLETS
+# To be added later
 ```
 
-```{r}
-saveRDS(wts_obj, file = "janesick_2023/processed/wts_obj.RDS")
-```
-
-
+#### Subsample to n cells for quicker processing (Comment out when using full dataset)
 ```{r}
 # # Random subsampling to n cells per cell type
 # # extract metadata
@@ -287,169 +159,82 @@ saveRDS(wts_obj, file = "janesick_2023/processed/wts_obj.RDS")
 # wts_obj <- subset(wts_obj, cells = sampled_cells)
 ```
 
+# 2. Normalisation & Feature Selection  
 
 ```{r}
-# Normalisation
+# 1. Normalise Data (Standard log-normalisation)
 wts_obj <- NormalizeData(wts_obj)
-wts_obj <- ScaleData(wts_obj, features = VariableFeatures(wts_obj))
-# wts_obj <- SCTransform(wts_obj)
-head(GetAssayData(wts_obj, layer = "data")) # confirm normalised
-```
-```{r}
-# Feature Selection (Binomial Deviance)
 
-# Convert Seurat object to single cell experiment (SCE) for compatibility with scry
+# 2. Compute Binomial Deviance on Raw Counts
 sce <- as.SingleCellExperiment(wts_obj, assay = 'RNA')
-
-# Calculate the binomial deviance (of each gene?) - use counts layer (raw counts) as the deviance is modeled on raw integer counts
+print(assayNames(sce))
 sce <- devianceFeatureSelection(sce, assay = "counts")
 
-# Extract deviance values and rank genes (Higher deviance = more deviation from the Null mode i.e. more biologically informative)
+# 3. Extract Deviance and Rank
 bin_dev <- rowData(sce)$binomial_deviance
 names(bin_dev) <- rownames(sce)
-
-# Add deviance values to the Seurat Assay metadata (using the [[]]) on the assay ensures compatibility with Seurat v4 and v5
 wts_obj[["RNA"]][["binomial_deviance"]] <- bin_dev
 
-# Rank and select the top 4000 deviant genes
-top_4000 <- names(sort(binomial_deviance, decreasing = TRUE)[1:4000])
-
-# Create the logical vector for the top 4000 genes
-is_deviant <- rownames(wts_obj) %in% top_4000
-
-# Name the logical vector so Seurat can map it to the features
-names(is_deviant) <- rownames(wts_obj)
-
-# Assign the logical vector to the Seurat object
-wts_obj[["RNA"]][["highly_deviant"]] <- is_deviant
-
-# Set Variable Features
+# 4. Define Variable Features (Top 4000)
+top_4000 <- names(sort(bin_dev, decreasing = TRUE)[1:4000])
 VariableFeatures(wts_obj) <- top_4000
 
-# Verify the metadata columns were created
-head(wts_obj[["RNA"]][[]])
+# 5. Create Metadata for Plotting
+is_highly_deviant <- rownames(wts_obj) %in% top_4000
+names(is_highly_deviant) <- rownames(wts_obj)
+wts_obj[["RNA"]][["highly_deviant"]] <- is_highly_deviant
+
+# 6. Scale Data (Now that VariableFeatures are set)
+wts_obj <- ScaleData(wts_obj, features = VariableFeatures(wts_obj))
 ```
 
-```{r}
-# Visualise Feature Selection results
-
+#### Visualise Feature Selection results
+```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 #calculate mean expression / dispersion (using normalised data)
-normalised_counts <- GetAssayData(wts_obj, layer = "data", assay = "RNA")
-gene_means <- Matrix::rowMeans(normalised_counts)
-gene_vars <- apply(normalised_counts, 1, var)
+norm_counts <- GetAssayData(wts_obj, layer = "data", assay = "RNA")
+gene_means <- Matrix::rowMeans(norm_counts)
+gene_vars <- Matrix::rowMeans(norm_counts^2) - gene_means^2
 gene_dispersions <- gene_vars / gene_means
-```
-
-```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
-# create a df for plotting
-plot_data <- data.frame(
-  gene = rownames(wts_obj),
-  means = gene_means,
-  dispersions = gene_dispersions,
-  highly_deviant = is_deviant,
-  binomial_deviance = binomial_deviance[rownames(wts_obj)]
-)
-
-# create scatter plot
-ggplot(plot_data, aes(x = means, y = dispersions, color = highly_deviant)) +
-  geom_point(size = 0.5, alpha = 0.6) +
-  scale_color_manual(values = c("FALSE" = "lightgray", "TRUE" = "red")) +
-  xlim(0, 1.5) +
-  ylim(0, 3) +
-  labs(
-    title = "Gene Selection by Deviance",
-    x = "Mean Expression",
-    y = "Dispersion",
-    color = "Highly Deviant"
-  ) +
-  theme_minimal()
 
 # create a df for plotting
 plot_data <- data.frame(
   gene = rownames(wts_obj),
   means = gene_means,
   dispersions = gene_dispersions,
-  highly_deviant = is_deviant,
-  binomial_deviance = binomial_deviance[rownames(wts_obj)]
+  highly_deviant = wts_obj[["RNA"]][["highly_deviant"]]
 )
 
-# create scatter plot
 ggplot(plot_data, aes(x = means, y = dispersions, color = highly_deviant)) +
   geom_point(size = 0.5, alpha = 0.6) +
   scale_color_manual(values = c("FALSE" = "lightgray", "TRUE" = "red")) +
-  xlim(0, 1.5) +
-  ylim(0, 3) +
-  labs(
-    title = "Gene Selection by Deviance",
-    x = "Mean Expression",
-    y = "Dispersion",
-    color = "Highly Deviant"
-  ) +
+  xlim(0, 1.5) + ylim(0, 3) +
+  labs(title = "Gene Selection by Deviance", x = "Mean Expression", y = "Dispersion") +
   theme_minimal()
-
-
-# Set highly deviant genes as variable features
-VariableFeatures(wts_obj) <- highly_deviant_genes
 ```
 
-# DIMENSIONALITY REDUCTION & VISUALISATION
+# 3. Dimensionality Reduction
 
 ```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
-# Dimensionality Reduction
 #PCA
 wts_obj <- RunPCA(wts_obj, features = VariableFeatures(wts_obj), verbose = F)
-
 ElbowPlot(wts_obj, ndims = 50, reduction = 'pca')
 
-# Extract first two PCA components and metadata
-pca_coords <- Embeddings(wts_obj, reduction = "pca")[, 1:2]
-plot_data <- data.frame(
-  PC_1 = pca_coords[, 1],
-  PC_2 = pca_coords[, 2],
-  nCount_RNA = wts_obj$nCount_RNA
-)
+# PCA Plot
+DimPlot(wts_obj, reduction = "pca", group.by = "Annotation") + ggtitle("PCA")
 
-# Create the plot
-pca_feature_plot <- ggplot(plot_data, aes(x = PC_1, y = PC_2, color = nCount_RNA)) +
-  geom_point(size = 1, alpha = 0.6) +
-  scale_color_viridis_c() +
-  labs(title = "PCA - Total Counts",
-       x = "PC 1",
-       y = "PC 2",
-       color = "nCount_RNA") +
-  theme_minimal()
+# Neighbors & Clusters (Required for UMAP structure usually)
+wts_obj <- FindNeighbors(wts_obj, dims = wts_params$dims, reduction = "pca", verbose = FALSE)
 
-print(pca_feature_plot)
-```
-
-
-```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # t-SNE
-wts_obj <- RunTSNE(wts_obj, dims = wts_params$n_dims, reduction = "pca", verbose = F) 
+wts_obj <- RunTSNE(wts_obj, dims = wts_params$dims, reduction = "pca", verbose = FALSE)
+DimPlot(wts_obj, reduction = "tsne", group.by = "Annotation") + ggtitle("t-SNE")
 
-tsne_plot <- DimPlot(wts_obj, reduction = "tsne", group.by = "Annotation") +
-  ggtitle("t-SNE - Cell Type Annotations")
-
-print(tsne_plot)
-```
-
-
-```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
 # UMAP
-#calc neighbours
-wts_obj <- FindNeighbors(wts_obj, dims = wts_params$n_dims, reduction = "pca", verbose = F)
-
-# Run UMAP
-wts_obj <- RunUMAP(wts_obj, dims = wts_params$n_dims, reduction = "pca", verbose = F)
-
-umap_plot <- DimPlot(wts_obj, reduction = "umap", group.by = "Annotation") +
-  ggtitle("UMAP - Cell Type Annotations")
-
-print(umap_plot)
+wts_obj <- RunUMAP(wts_obj, dims = wts_params$dims, reduction = "pca", verbose = FALSE)
+DimPlot(wts_obj, reduction = "umap", group.by = "Annotation") + ggtitle("UMAP")
 ```
 
-# save seurat object
+# 4. Save processed object
 ```{r}
-saveRDS(wts_obj, file = "janesick_2023/processed/wts_obj_processed.RDS")
+saveRDS(wts_obj, file = file.path(data_dir, "janesick_2023/processed/wts_obj_processed.RDS"))
 ```
-
