@@ -166,8 +166,6 @@ y_train <- inv_gene_exp_filtered$surface_class
 
 # Fit LDA using x/grouping syntax (faster than formula ~ .)
 fit_lda <- lda(x = x_train, grouping = y_train)
-
-saveRDS(fit_lda, file = "janesick_2023/processed/fit_lda.RDS")
 ```
 
 # 10. Plot LDA
@@ -279,6 +277,12 @@ ggplot(plot_meta, aes(x = y_centroid, y = x_centroid, color = classification_sta
 
 # Write code to train LDA model using all data.
 ```{r}
+# Split into X (features) and Y (labels) for efficient processing
+x_train <- inv_tumour_expr %>% dplyr::select(-surface_class)
+y_train <- inv_tumour_expr$surface_class
 
+# Fit LDA using x/grouping syntax (faster than formula ~ .)
+fit_lda <- lda(x = x_train, grouping = y_train)
+
+saveRDS(fit_lda, file = "janesick_2023/processed/fit_lda.RDS")
 ```
-
