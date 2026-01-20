@@ -13,6 +13,10 @@ source("config.R")
 # Set root directory using the variable from config
 knitr::opts_knit$set(root.dir = data_dir)
 
+# Define figure directory based on your request
+fig_subdir <- file.path(figs_dir, "0.3.1")
+if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
+
 # Load libraries
 library(MASS)
 library(dplyr)
@@ -27,7 +31,7 @@ iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
 ```
 
-# 2. Assign 2/3 of the shared genes (between ISS/scRNA) as training training genes
+# 2. Select 2/3 of the shared genes (between ISS/scRNA) for training
 ```{r}
 # Randomly select 2/3 of the shared genes for training
 set.seed(lda_params$seed)
@@ -37,7 +41,7 @@ train_genes <- sample(shared_genes, size = floor(length(shared_genes) * lda_para
 saveRDS(train_genes, file = "janesick_2023/processed/train_genes.RDS")
 ```
 
-# 3. Filter confounding cells
+# 3. Filter confounding cells (comment out until we properly define the confounding cells)
 - Cells labelled shallow core
 - Cells labelled dead/dying cells (NAs in surface_classification_clusters)
 ```{r}
@@ -54,24 +58,24 @@ saveRDS(train_genes, file = "janesick_2023/processed/train_genes.RDS")
 # cat(round((n_before - n_after)/n_before, 2)*100, "% cells removed.")
 ```
 
-# 4. Normalise the matrix with log transformation
+# 4. Normalise the matrix with log transformation (commented out bc already did in 0.2.1)
 ```{r}
-# Manual Log Transformation
-# 1. Pull the raw counts
-raw_counts <- GetAssayData(iss_obj_invasive, assay = "RNA", layer = "counts")
-
-# 2. log transformation without scaling/centering
-log_transformed_counts <- log1p(raw_counts)
-
-# 3. Place into 'data' layer for downstream extraction
-iss_obj_invasive <- SetAssayData(
-  iss_obj_invasive, 
-  layer = "data", 
-  new.data = log_transformed_counts
-)
+# # Manual Log Transformation
+# # 1. Pull the raw counts
+# raw_counts <- GetAssayData(iss_obj_invasive, assay = "RNA", layer = "counts")
+# 
+# # 2. log transformation without scaling/centering
+# log_transformed_counts <- log1p(raw_counts)
+# 
+# # 3. Place into 'data' layer for downstream extraction
+# iss_obj_invasive <- SetAssayData(
+#   iss_obj_invasive, 
+#   layer = "data", 
+#   new.data = log_transformed_counts
+# )
 ```
 
-# 5. Extract normalised counts, add surface_class column
+# 5. Extract normalised expr matrix, add surface_class column
 ```{r}
 # 1. Extract expression
 expr_mat <- t(as.matrix(LayerData(iss_obj_invasive, layer = "data")))
@@ -115,76 +119,73 @@ rownames(inv_gene_exp_test) <- inv_gene_exp_test$cell_id
 inv_gene_exp_test$cell_id <- NULL
 ```
 
+```{r}
+# 80
+table(inv_gene_exp_filtered$surface_class)
+
+table(inv_gene_exp_test$surface_class)
+```
 # 7. Filter genes to include only the training genes
 ```{r}
 inv_gene_exp_train <- inv_gene_exp_train %>%
   dplyr::select(surface_class, all_of(train_genes))
 ```
 
-# 8. Feature selection  
- - Remove genes that have zero variance and thus are not discriminatory between groups.  
+# 8. Feature selection  (commented out as 111 genes were being removed due to low variance)
+ - Remove genes that have near zero variance and thus are not discriminatory between groups.  
 ```{r}
-gene_cols <- setdiff(colnames(inv_gene_exp_train), "surface_class")
+# nzv_cols <- nearZeroVar(inv_gene_exp_train[, train_genes], saveMetrics = FALSE)
+# 
+# if(length(nzv_cols) > 0){
+#   genes_to_drop <- train_genes[nzv_cols]
+#   genes_to_keep <- setdiff(train_genes, genes_to_drop)
+# } else {
+#   genes_to_keep <- train_genes
+# }
+# 
+# print(paste(length(train_genes) - length(genes_to_keep), "genes removed due to low variance."))
+# 
+# # Filter training set
+# inv_gene_exp_filtered <- inv_gene_exp_train %>%
+#   dplyr::select(surface_class, all_of(genes_to_keep)) %>%
+#   filter(!is.na(surface_class)) # Ensure no NAs in target
+# 
+# saveRDS(genes_to_keep, file = "janesick_2023/processed/genes_to_keep.RDS")
 
-# Calculate variance within each group for each gene
-keep_genes <- sapply(gene_cols, function(gene) {
-  var_by_group <- inv_gene_exp_train %>%
-    group_by(surface_class) %>%
-    summarise(var = var(.data[[gene]], na.rm = TRUE), .groups = 'drop')
-
-  # Keep gene if it has non-zero variance in at least one group
-  any(var_by_group$var > 0)
-})
-
-# Filter to keep only informative genes
-genes_to_keep <- names(keep_genes)[keep_genes]
-genes_removed <- names(keep_genes)[!keep_genes]
-
-print("Genes removed:")
-print(length(genes_removed))
-
-inv_gene_exp_filtered <- inv_gene_exp_train %>%
-  dplyr::select(surface_class, all_of(genes_to_keep))
-
+# renamed variables to make the next code blocks work as the above code is commented out
+genes_to_keep <- train_genes
+inv_gene_exp_filtered <- inv_gene_exp_train
 saveRDS(genes_to_keep, file = "janesick_2023/processed/genes_to_keep.RDS")
-```
-
-# Remove NAs
-```{r}
-# Remove rows with NA in surface_class before fitting
-inv_gene_exp_filtered <- inv_gene_exp_filtered %>%
-  filter(!is.na(surface_class))
 ```
 
 # 9. Fit LDA model
 ```{r}
-fit_lda <- lda(surface_class ~ ., inv_gene_exp_filtered)
+# Split into X (features) and Y (labels) for efficient processing
+x_train <- inv_gene_exp_filtered %>% dplyr::select(-surface_class)
+y_train <- inv_gene_exp_filtered$surface_class
+
+# Fit LDA using x/grouping syntax (faster than formula ~ .)
+fit_lda <- lda(x = x_train, grouping = y_train)
 
 saveRDS(fit_lda, file = "janesick_2023/processed/fit_lda.RDS")
 ```
 
 # 10. Plot LDA
 ```{r, fig.width=7.87, dpi=300, dev='tiff', out.width='100%'}
-# Define figure directory based on your request
-fig_subdir <- file.path(figs_dir, "0.3.1")
-if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
-
 # Calculate LDA values
 lda_values <- predict(fit_lda)$x
 lda_df <- data.frame(LD1 = lda_values[,1], surface_class = inv_gene_exp_filtered$surface_class)
 
-# Define readable labels for the config settings
+# Define labels & set current label
 method_labels <- c(
   "surface_class_radius"   = "Radius Definition",
   "surface_class_nn"       = "KNN Definition",
   "surface_class_clusters" = "Unsupervised Clustering"
 )
-
-# Get the nice label for the current run
 current_label <- method_labels[classification_method]
 if(is.na(current_label)) current_label <- classification_method
 
-# Create the plot
+# Plot
 p_lda <- ggplot(lda_df, aes(x = LD1, fill = surface_class)) +
   geom_density(alpha = 0.5) +
   theme_minimal() +
@@ -198,71 +199,36 @@ p_lda <- ggplot(lda_df, aes(x = LD1, fill = surface_class)) +
   theme(
     plot.title = element_text(face = "bold", size = 12),
     plot.subtitle = element_text(size = 10, color = "gray30")
-  )
+  ); p_lda
 
-# Print the plot to the Rmarkdown output
-print(p_lda)
-
-# Save the plot to the specific folder
-ggsave(
-  filename = file.path(fig_subdir, paste0("LDA_density_", classification_method, ".png")),
-  plot = p_lda,
-  dpi = 300,
-  width = 8,
-  height = 6
-)
+# Save plot
+ggsave(filename = file.path(fig_subdir, paste0("LDA_density_", classification_method, ".png")), plot = p_lda, dpi = 300)
 ```
 
 # 11. Predict test set surface_class using the fitted LDA model
 ```{r}
-# Subset test data to only include genes used in the LDA model
+# 1. Subset test data to match model features
 inv_gene_exp_test_filtered <- inv_gene_exp_test %>%
-  dplyr::select(surface_class, all_of(genes_to_keep))
+  dplyr::select(all_of(genes_to_keep))
 
-# Predict surface_class for test data
-lda_predictions <- predict(fit_lda, newdata = inv_gene_exp_test_filtered)
-```
-
-```{r}
-inv_gene_exp_test$predicted_surface_class <- lda_predictions$class
-predicted_classes <- lda_predictions$class
-```
-
-```{r}
-accuracy <- mean(predicted_classes == inv_gene_exp_test$surface_class)
-print(paste("Test Accuracy:", round(accuracy, 3)))
-```
-
-```{r}
-# Predict surface_class with LDA model
-
-# Subset test data to only include genes used in the LDA model
-inv_gene_exp_test_filtered <- inv_gene_exp_test %>%
-  dplyr::select(surface_class, all_of(genes_to_keep))
-
-# Predict surface_class for test data
+# 2. Predict
 lda_predictions <- predict(fit_lda, newdata = inv_gene_exp_test_filtered)
 
-# Add predictions to dataframe
+# 3. Add predictions to test dataframe
 inv_gene_exp_test$predicted_surface_class <- lda_predictions$class
 predicted_classes <- lda_predictions$class
 
-# Calculate Accuracy
+# 4. Calculate Accuracy
 accuracy <- mean(predicted_classes == inv_gene_exp_test$surface_class)
 print(paste("Test Accuracy:", round(accuracy, 3)))
 
-# Generate and Save Confusion Matrix
-
-# Create confusion matrix object
+# 5. Generate and Save Confusion Matrix
 conf_matrix <- confusionMatrix(
   factor(predicted_classes),
   factor(inv_gene_exp_test$surface_class)
-)
+);  conf_matrix
 
-# Print to Rmarkdown
-print(conf_matrix)
-
-# Save the full confusion matrix output to a text file
+# Save the matrix text
 capture.output(
   conf_matrix, 
   file = file.path(fig_subdir, paste0("confusion_matrix_", classification_method, ".txt"))
@@ -276,7 +242,6 @@ capture.output(
 plot_meta <- iss_obj_invasive@meta.data
 
 # Create a column for Classification Status
-# Default to "Correct" (this covers background cells and correct predictions)
 plot_meta$classification_status <- "Training"
 
 # Identify Test Set cells
@@ -311,3 +276,9 @@ ggplot(plot_meta, aes(x = y_centroid, y = x_centroid, color = classification_sta
     theme_minimal() +
     guides(color = guide_legend(override.aes = list(size = 3)))
 ```
+
+# Write code to train LDA model using all data.
+```{r}
+
+```
+

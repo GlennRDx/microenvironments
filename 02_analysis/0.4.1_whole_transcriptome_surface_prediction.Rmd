@@ -13,6 +13,10 @@ source("config.R")
 # Set root directory using the variable from config
 knitr::opts_knit$set(root.dir = data_dir)
 
+# Define Figure Directory 
+fig_subdir <- file.path(figs_dir, "0.4.1")
+if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
+
 # Load libraries
 library(MASS)
 library(dplyr)
@@ -20,66 +24,55 @@ library(data.table)
 library(Seurat)
 library(ggplot2)
 library(tidyverse)
-library(data.table)
 ```
 ```{r}
-# load pretrained LDA model & list of genes used
+# load files
 fit_lda <- readRDS("janesick_2023/processed/fit_lda.RDS")
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
 genes_to_keep <- readRDS("janesick_2023/processed/genes_to_keep.RDS")
 wts_obj <- readRDS("janesick_2023/processed/wts_obj_processed.RDS")
+wts_expr_clean <- fread("janesick_2023/raw/scRNAseq_data_quantile_matched.txt") %>% as.data.frame()
 ```
 
 # 2. Replace counts with quantile matched counts
 ```{r}
-wts_expr_clean <- fread("janesick_2023/raw/scRNAseq_data_quantile_matched.txt") %>% as.data.frame()
+# 1. clean up quant. matched data
 rownames(wts_expr_clean) <- wts_expr_clean$V1
 wts_expr_clean$V1 <- NULL
 
-# wts_meta_clean <- readRDS("janesick_2023/raw_clean/wts_meta_clean.RDS") %>% as.data.frame()
-# wts_obj = CreateSeuratObject(counts = wts_expr_clean, meta.data = wts_meta_clean)
-```
-
-```{r}
-# Remove genes which are not shared between ISS and WTS
+# 2. Remove genes which are not shared between ISS and WTS
 wts_obj <- subset(wts_obj, features = shared_genes)
-```
 
-```{r}
-# covert quantile matched counts to sparse matrix
+# 3. Reorder/subset the new matrix to match the Seurat object's cells/genes
+wts_expr_clean <- wts_expr_clean[rownames(wts_obj), colnames(wts_obj)]
+
+# 4. covert quantile matched counts to sparse matrix
 counts_matrix_sparse <- as(as.matrix(wts_expr_clean), "dgCMatrix")
 
-# Replace old RAW counts with quantile matched sparse matrix
+# 5. Replace old RAW counts with quantile matched sparse matrix
 wts_obj[["RNA"]] <- SetAssayData(object = wts_obj[["RNA"]], 
                              layer = "counts", 
                              new.data = counts_matrix_sparse)
-```
 
-# Filter to invasive tumour cells only
-
-```{r}
+# 6. Filter to invasive tumour cells only
 wts_obj_invasive <- subset(wts_obj, subset = Annotation %in% "Invasive_Tumor")
 ```
 
-# 3. Normalise
+# 3. Normalise (log + CPM)
 ```{r}
-# Manual CPM Normalisation + Log Transformation
-
-# 1. Extract raw counts (sparse matrix)
+# 1. Extract raw counts
 raw_counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
 
 # 2. Calculate library size (total counts per cell)
 lib_size <- colSums(raw_counts)
 
 # 3. Normalise to CPM (Counts Per Million)
-# Transpose twice to divide columns (cells) by the library size vector efficiently
 cpm_counts <- t(t(raw_counts) / lib_size) * 1e6
 
 # 4. Log transform: log(CPM + 1)
-# Using log1p (natural log) to match standard Seurat conventions
 log_cpm_counts <- log1p(cpm_counts)
 
-# 5. Inject back into the 'data' layer
+# 5. Place back into the 'data' layer
 wts_obj_invasive <- SetAssayData(
   object = wts_obj_invasive, 
   layer = "data", 
@@ -94,16 +87,15 @@ inv_tumour_expr <- as.data.frame(t(as.matrix(LayerData(wts_obj_invasive, layer =
 
 # 4. Align genes between two data sets
 ```{r}
-genes_in_scrna <- intersect(genes_to_keep, colnames(inv_tumour_expr))
-cat("\nGene alignment summary:\n")
-cat("Genes in LDA model:", length(genes_to_keep), "\n")
-cat("Genes found in scRNA-seq:", length(genes_in_scrna), "\n")
-# Create expression matrix with only available genes
+# 1. Align columns (genes) to match the LDA model order exactly
 expr_df_aligned <- inv_tumour_expr[, genes_to_keep]
-# reorder columns to match the training data
-expr_df_aligned <- expr_df_aligned %>%
-  dplyr::select(all_of(genes_to_keep))
+
+# 2. Verify check
+if(ncol(expr_df_aligned) != length(genes_to_keep)) {
+  stop("Error: Column count mismatch. Verify that all training genes are present in scRNA-seq data.")
+}
 ```
+
 # 5. Apply LDA model to predict surface / core labels
 ```{r}
 # Make predictions
@@ -146,24 +138,20 @@ print(table(results_df_filtered$predicted_class))
 ```
 # 6. Plot LDA
 ```{r}
-# Define Figure Directory 
-fig_subdir <- file.path(figs_dir, "0.4.1")
-if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
-
-# Prepare Stats for Plot Labels 
+# 1. Prepare Stats for Plot Labels 
 # Count stats from the full results_df
 n_high_conf_core <- sum(results_df$predicted_class == "Core" & results_df$status == "High Confidence")
 n_high_conf_surf <- sum(results_df$predicted_class == "Surface" & results_df$status == "High Confidence")
 n_ambiguous <- sum(results_df$status == "Ambiguous")
 
-# Create a stats label string
+
+
+# 2. Plot Labels
 stats_label <- paste0(
   "High Conf. Core: ", n_high_conf_core, "\n",
   "High Conf. Surface: ", n_high_conf_surf, "\n",
   "Ambiguous: ", n_ambiguous
 )
-
-# Define readable labels for the config settings (same as previous script)
 method_labels <- c(
   "surface_class_radius"   = "Radius Definition",
   "surface_class_nn"       = "KNN Definition",
@@ -172,11 +160,11 @@ method_labels <- c(
 current_label <- method_labels[classification_method]
 if(is.na(current_label)) current_label <- classification_method
 
-# Generate Plot 
+
+
+# 3. Plot 
 p_pred <- ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
   geom_density(alpha = 0.5) +
-  # Add lines for visual reference (you might want to adjust x-intercepts based on your data distribution)
-  geom_vline(xintercept = c(-1.0, 1.5), linetype = "dashed", color = "black", alpha=0) +
   
   # Add the stats box
   annotate("label", x = Inf, y = Inf, label = stats_label, 
@@ -194,46 +182,32 @@ p_pred <- ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
   theme(
     plot.title = element_text(face = "bold", size = 12),
     plot.subtitle = element_text(size = 10, color = "gray30")
-  )
+  ); p_pred
 
-# Print and Save
-print(p_pred)
 
-ggsave(
-  filename = file.path(fig_subdir, paste0("scRNA_LDA_projection_", classification_method, ".png")), plot = p_pred, dpi = 300)
+# 4. Save
+ggsave(filename = file.path(fig_subdir, paste0("scRNA_LDA_projection_", classification_method, ".png")), plot = p_pred, dpi = 300)
 ```
-
 
 # 7. Add Predictions to Seurat Object
 ```{r}
-# Add predictions back to the invasive subset
-# Initialise all as NA
-wts_obj_invasive$predicted_surface_class <- NA
-wts_obj_invasive$prob_core <- NA
-wts_obj_invasive$LD1_score <- NA
+# Create a dataframe for the new metadata, ensuring row names are cell IDs
+meta_to_add <- results_df_filtered %>%
+  tibble::remove_rownames() %>%
+  dplyr::select(cell_id, predicted_surface_class = predicted_class, prob_core, LD1_score = LD1) %>%
+  tibble::column_to_rownames("cell_id")
 
-# Add high-confidence predictions only
-high_conf_idx <- match(results_df_filtered$cell_id, colnames(wts_obj_invasive))
-wts_obj_invasive$predicted_surface_class[high_conf_idx] <- as.character(results_df_filtered$predicted_class)
-wts_obj_invasive$prob_core[high_conf_idx] <- results_df_filtered$prob_core
-wts_obj_invasive$LD1_score[high_conf_idx] <- results_df_filtered$LD1
+# Add to invasive object
+wts_obj_invasive <- AddMetaData(wts_obj_invasive, metadata = meta_to_add)
 
-# Also add to full Seurat object
-wts_obj$predicted_surface_class <- NA
-wts_obj$prob_core <- NA
-wts_obj$LD1_score <- NA
+# Add to full object (cells not in the list will automatically get NAs)
+wts_obj <- AddMetaData(wts_obj, metadata = meta_to_add)
 
-invasive_cells <- colnames(wts_obj_invasive)
-wts_obj$predicted_surface_class[colnames(wts_obj) %in% invasive_cells] <- 
-  wts_obj_invasive$predicted_surface_class
-wts_obj$prob_core[colnames(wts_obj) %in% invasive_cells] <- 
-  wts_obj_invasive$prob_core
-wts_obj$LD1_score[colnames(wts_obj) %in% invasive_cells] <- 
-  wts_obj_invasive$LD1_score
+# Quick check
+print(table(wts_obj$predicted_surface_class, useNA = "ifany"))
+```
 
+# 8. Save
+```{r}
 saveRDS(wts_obj_invasive, file = "janesick_2023/processed/wts_obj_invasive.RDS")
-
-cat("\nPredictions added to Seurat object\n")
-cat("High-confidence cells:", sum(!is.na(wts_obj_invasive$predicted_surface_class)), "\n")
-cat("Low-confidence cells (NA):", sum(is.na(wts_obj_invasive$predicted_surface_class)), "\n")
 ```

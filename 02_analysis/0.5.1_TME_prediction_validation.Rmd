@@ -51,7 +51,7 @@ markers_WTD <- FindMarkers(
   ident.2 = "Core",
   test.use = validation_params$marker_method,
   logfc.threshold = 0.25,
-  min.pct = 0.1,
+  min.pct = 0,
   verbose = FALSE
 )
 
@@ -75,7 +75,7 @@ markers_ISS <- FindMarkers(
   ident.2 = "Core",
   test.use = validation_params$marker_method,
   logfc.threshold = 0.25,
-  min.pct = 0.1,
+  min.pct = 0,
   verbose = FALSE
 )
 
