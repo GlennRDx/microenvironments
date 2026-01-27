@@ -1,0 +1,108 @@
+---
+title: "hyperparam_tuning"
+output: html_document
+---
+
+```{r, fig.width=7.87*1.75, fig.height = 6.5*1.75, dpi=300, dev='tiff', out.width='100%'}
+# 1. Setup & Data Loading
+source("config.R") #
+library(RANN)      #
+library(MASS)      #
+library(caret)     #
+library(tidyverse) #
+library(data.table) #
+
+# Create output directories
+opt_dir <- file.path(figs_dir, "parameter_optimization")
+spatial_plots_dir <- file.path(opt_dir, "spatial_plots")
+if(!dir.exists(spatial_plots_dir)) dir.create(spatial_plots_dir, recursive = TRUE)
+
+# Load data
+iss_meta <- readRDS(file.path(data_dir, "janesick_2023/processed/iss_meta.RDS"))
+iss_obj_invasive <- readRDS(file.path(data_dir, "janesick_2023/processed/iss_obj_invasive.RDS"))
+train_genes <- readRDS(file.path(data_dir, "janesick_2023/processed/train_genes.RDS"))
+setDT(iss_meta) #
+
+# 2. Define Optimization Grid
+radii <- seq(10, 30, by = 5)      # Adjust range as needed
+thresholds <- seq(0.6, 0.9, by = 0.1) # Adjust range as needed
+grid <- expand.grid(radius = radii, threshold = thresholds)
+
+# 3. Iterative Optimization Loop
+results <- map_df(1:nrow(grid), function(i) {
+  curr_r <- grid$radius[i]
+  curr_t <- grid$threshold[i]
+  test_id <- paste0("R", curr_r, "_T", curr_t)
+  
+  message("Testing: ", test_id)
+  
+  # --- STEP A: RADIUS CLASSIFICATION ---
+  coords <- iss_meta[, .(x_centroid, y_centroid)]
+  nn_result <- nn2(data = coords, query = coords, searchtype = "radius", radius = curr_r, k = 200)
+  
+  invasive_idx <- which(iss_meta$Annotation == "Invasive_Tumor")
+  is_tumour_neighbour <- iss_meta$Annotation %in% c("Invasive_Tumor", "Prolif_Invasive_Tumor")
+  
+  classification_vec <- vapply(invasive_idx, function(idx) {
+    nb_idx <- nn_result$nn.idx[idx, ]
+    nb_idx <- nb_idx[nb_idx != 0 & nb_idx != idx]
+    if (length(nb_idx) == 0) return("Surface")
+    frac <- sum(is_tumour_neighbour[nb_idx]) / length(nb_idx)
+    if (frac > curr_t) "Core" else "Surface"
+  }, FUN.VALUE = character(1))
+  
+  # Update temp metadata for plotting
+  tmp_meta <- copy(iss_meta)
+  tmp_meta$surface_class <- "Other"
+  tmp_meta$surface_class[invasive_idx] <- classification_vec
+  
+  # --- STEP B: SAVE SPATIAL PLOT ---
+  p_spatial <- ggplot(tmp_meta, aes(x = y_centroid, y = x_centroid, color = surface_class)) +
+    geom_point(data = subset(tmp_meta, surface_class == "Other"), size = 0.01) +
+    geom_point(data = subset(tmp_meta, surface_class != "Other"), size = 0.01) +
+    scale_color_manual(values = c("Surface" = "#C90065", "Core" = "#fac0da", "Other" = "grey75")) +
+    coord_fixed(ylim = c(3850, 0)) +
+    theme_minimal() +
+    labs(title = paste("Radius:", curr_r, "| Threshold:", curr_t))
+  
+  ggsave(file.path(spatial_plots_dir, paste0(test_id, "_spatial.png")), plot = p_spatial, width = 7.87*1.75, height = 6.5*1.75)
+  
+  # --- STEP C: LDA 5-FOLD CV ---
+  expr_mat <- as.data.frame(t(as.matrix(LayerData(iss_obj_invasive, layer = "data"))))
+  expr_mat$surface_class <- classification_vec[match(rownames(expr_mat), iss_meta$cell_id[invasive_idx])]
+  lda_df <- expr_mat %>% filter(surface_class %in% c("Surface", "Core"))
+  
+  set.seed(lda_params$seed)
+  folds <- createFolds(lda_df$surface_class, k = 5)
+  
+  cv_metrics <- map_df(folds, function(test_idx) {
+    train_data <- lda_df[-test_idx, c("surface_class", train_genes)]
+    test_data  <- lda_df[test_idx, c("surface_class", train_genes)]
+    
+    fit <- lda(surface_class ~ ., data = train_data)
+    preds <- predict(fit, newdata = test_data)$class
+    
+    cm <- confusionMatrix(factor(preds, levels = c("Core", "Surface")), 
+                          factor(test_data$surface_class, levels = c("Core", "Surface")))
+    return(as.data.frame(t(cm$byClass)))
+  })
+  
+  return(data.frame(
+    radius = curr_r, 
+    threshold = curr_t, 
+    balanced_accuracy = mean(cv_metrics$`Balanced Accuracy`, na.rm = TRUE)
+  ))
+})
+
+# 4. FINAL GRID PLOT
+p_grid <- ggplot(results, aes(x = factor(radius), y = factor(threshold), fill = balanced_accuracy)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "magma") +
+  geom_text(aes(label = round(balanced_accuracy, 3)), color = "white", size = 3) +
+  labs(title = "Optimization Heatmap: Balanced Accuracy",
+       x = "Search Radius", y = "Tumor Fraction Threshold", fill = "Bal. Acc") +
+  theme_minimal()
+
+ggsave(file.path(opt_dir, "optimization_heatmap.png"), plot = p_grid, width = 8, height = 6)
+```
+
