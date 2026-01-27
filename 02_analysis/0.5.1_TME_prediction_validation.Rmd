@@ -40,6 +40,9 @@ iss_obj_invasive <- subset(iss_obj_invasive, features = genes_to_keep)
 ```
 
 # 2. DGE Analysis
+1. min.pct (filters out genes that are expressed in fewer than a specific percentage of cells in both groups) was set to 0: Can lead to significant p-values for genes that are only expressed in 1 or 2 cells: not v useful as "markers" for a whole population.
+
+2. logfc.threshold (filters out genes that do not meet a minimum average fold-change difference between groups) was set to 0: Lead to p-value inflation, where tiny, biologically meaningless differences become statistically significant due to the large number of cells
 ```{r}
 # 1. scRNA-seq (WTD) Analysis
 Idents(scRNA_invasive) <- scRNA_invasive$predicted_surface_class
@@ -51,7 +54,7 @@ markers_WTD <- FindMarkers(
   ident.2 = "Core",
   test.use = validation_params$marker_method,
   logfc.threshold = 0.25,
-  min.pct = 0,
+  min.pct = 0.1,
   verbose = FALSE
 )
 
