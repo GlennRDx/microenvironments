@@ -1,0 +1,97 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+
+# 1. Load libraries and data
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+# Load config.R
+source("config.R") 
+
+# Set root directory using the variable from config
+knitr::opts_knit$set(root.dir = data_dir)
+
+# Define figure directory
+fig_subdir <- file.path(figs_dir, "0.5.2")
+if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
+
+library(Seurat)
+library(dplyr)
+library(EnhancedVolcano)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(ggplot2)
+```
+
+```{r}
+# Load data
+wts_obj <- readRDS("janesick_2023/processed/wts_obj_processed_predicted.RDS")
+```
+
+# 2. DGE Analysis
+```{r}
+Idents(wts_obj) <- "predicted_surface_class"
+
+# Find markers comparing Surface (ident.1) vs Core (ident.2)
+dge_results <- FindMarkers(
+  object = wts_obj,
+  ident.1 = "Surface",
+  ident.2 = "Core",
+  logfc.threshold = 0.25,
+  min.pct = 0.1
+)
+
+# Filter for statistically significant genes
+dge_sig <- dge_results %>%
+  filter(p_val_adj < 0.05) %>%
+  arrange(desc(avg_log2FC))
+```
+
+# 3. Volcano Plot
+```{r}
+# Create Volcano Plot
+p_volc <- EnhancedVolcano(
+  toptable = dge_results,
+  lab = rownames(dge_results),
+  x = 'avg_log2FC',
+  y = 'p_val_adj',
+  title = 'Surface vs. Core Invasive Tumor',
+  subtitle = 'Positive FC = Surface | Negative FC = Core',
+  pCutoff = 0.05,
+  FCcutoff = 0.5,
+  pointSize = 2.0,
+  labSize = 4.0
+)
+
+print(p_volc)
+```
+
+# 4. GO enrichment
+```{r, fig.width=7.87*1.25, fig.height = 6.5*1.25, dpi=300, dev='tiff', out.width='100%'}
+# 1. Get list of significant gene names
+genes_to_test <- rownames(dge_sig)
+
+# 2. Convert Gene Symbols to Entrez IDs (required for clusterProfiler)
+gene_ids <- bitr(
+  genes_to_test, 
+  fromType = "SYMBOL", 
+  toType = "ENTREZID", 
+  OrgDb = org.Hs.eg.db
+)
+
+# 3. Run GO Enrichment (Biological Process)
+go_results <- enrichGO(
+  gene = gene_ids$ENTREZID,
+  OrgDb = org.Hs.eg.db,
+  ont = "BP",           # Biological Process
+  pAdjustMethod = "BH",
+  pvalueCutoff = 0.05,
+  readable = TRUE       # Converts IDs back to symbols in output
+)
+
+# 4. Plot top 15 pathways
+dotplot(go_results, showCategory = 15) + 
+  ggtitle("GO Enrichment: Surface & Core DGE")
+```
