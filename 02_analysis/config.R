@@ -4,7 +4,7 @@ data_dir <- file.path(root_dir, "01_data")
 figs_dir <- file.path(root_dir, "03_figures")
 
 # General parameters
-classification_method <- "surface_class_nn" # Options: "surface_class_nn", "surface_class_clusters", "surface_class_radius"
+classification_method <- "surface_class_radius" # Options: "surface_class_nn", "surface_class_clusters", "surface_class_radius"
 
 # 0.1.1
 wts_params <- list(
@@ -15,8 +15,8 @@ wts_params <- list(
 
 # 0.2.1
 iss_params <- list(
-  radius      = 30,    # Radius for neighbourhood definition
-  knn         = 5,    # Number of neighbours for KNN method
+  radius      = 25,    # Radius for neighbourhood definition
+  knn         = 25,    # Number of neighbours for KNN method
   centre_x    = 3249.27,  # Center X coordinate for zooming/plotting
   centre_y    = 2027.26,  # Center Y coordinate for zooming/plotting
   threshold   = 0.85  # Threshold for Core vs Surface classification
@@ -26,7 +26,7 @@ iss_params <- list(
 lda_params <- list(
   seed        = 123,
   train_prop  = 2/3,   # Proportion of shared genes for training
-  split_prop  = 0.8    # Train/Test split ratio for cells
+  split_prop  = 0.9    # Train/Test split ratio for cells
 )
 
 # 0.3.2
@@ -55,5 +55,5 @@ prediction_params <- list(
 # 0.5.1
 validation_params <- list(
   n_pseudo_reps = 2,      # Number of pseudo-replicates
-  marker_method = "MAST"  # Options: "MAST", "wilcox", "DESeq2"
+  marker_method = "negbinom"  # Options: "MAST", "wilcox", "DESeq2", "negbinom"
 )
