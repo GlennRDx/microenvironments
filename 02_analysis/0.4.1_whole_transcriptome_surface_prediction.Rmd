@@ -25,6 +25,7 @@ library(Seurat)
 library(ggplot2)
 library(tidyverse)
 ```
+
 ```{r}
 # load files
 fit_lda <- readRDS("janesick_2023/processed/fit_lda.RDS")
@@ -210,4 +211,9 @@ print(table(wts_obj$predicted_surface_class, useNA = "ifany"))
 # 8. Save
 ```{r}
 saveRDS(wts_obj_invasive, file = "janesick_2023/processed/wts_obj_invasive.RDS")
+
+# Pass the predicted labels back to the original wts obj
+wts_obj <- readRDS("janesick_2023/processed/wts_obj_processed.RDS")
+wts_obj <- AddMetaData(wts_obj, metadata = meta_to_add) # add metadata
+saveRDS(wts_obj, file = "janesick_2023/processed/wts_obj_processed_predicted.RDS")
 ```
