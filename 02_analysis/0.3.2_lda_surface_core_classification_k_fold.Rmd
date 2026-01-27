@@ -44,7 +44,7 @@ saveRDS(train_genes, file = "janesick_2023/processed/train_genes.RDS")
 
 # 3. Filter confounding cells
 ```{r}
-# iss_obj_invasive <- subset(iss_obj_invasive, subset = seurat_clusters != 8)
+iss_obj_invasive <- subset(iss_obj_invasive, subset = seurat_clusters != 8)
 ```
 
 # 4. Normalise matrix

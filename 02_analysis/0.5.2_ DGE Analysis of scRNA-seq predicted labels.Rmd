@@ -20,7 +20,7 @@ if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
 library(Seurat)
 library(dplyr)
 library(EnhancedVolcano)
-library(clusterProfiler)
+library(topGO)
 library(org.Hs.eg.db)
 library(ggplot2)
 ```
@@ -39,6 +39,7 @@ dge_results <- FindMarkers(
   object = wts_obj,
   ident.1 = "Surface",
   ident.2 = "Core",
+  test.use = "negbinom",
   logfc.threshold = 0.25,
   min.pct = 0.1
 )
@@ -94,4 +95,55 @@ go_results <- enrichGO(
 # 4. Plot top 15 pathways
 dotplot(go_results, showCategory = 15) + 
   ggtitle("GO Enrichment: Surface & Core DGE")
+```
+
+# topGO
+```{r}
+# 1. Define the Gene Universe and the "Interesting" genes
+# topGO needs a named vector where names are gene symbols and values are p-values
+all_genes <- dge_results$p_val_adj
+names(all_genes) <- rownames(dge_results)
+
+# 2. Create a selection function (identifies significant genes)
+topDiffGenes <- function(allScore) {
+  return(allScore < 0.05)
+}
+
+# 3. Initialize topGOdata object
+# Using 'mapping = org.Hs.eg.db' and 'ID = symbol' to match Seurat output
+go_data <- new("topGOdata",
+  ontology = "BP",              # Biological Process
+  allGenes = all_genes,
+  geneSel = topDiffGenes,
+  annot = annFUN.org,
+  mapping = "org.Hs.eg.db",
+  ID = "symbol"                 # Assumes Seurat rownames are symbols
+)
+
+# 4. Run Statistical Tests
+# 'classic' is standard; 'elim' is more conservative/specific to GO hierarchy
+result_fisher <- runTest(go_data, algorithm = "classic", statistic = "fisher")
+
+# 5. Extract Results Table
+go_results_table <- GenTable(
+  go_data, 
+  classicFisher = result_fisher, 
+  orderBy = "classicFisher", 
+  ranksOf = "classicFisher", 
+  topNodes = 20
+)
+
+# 6. Visualization (Manual ggplot2 barplot)
+# Clean the p-value column (sometimes has < signs)
+go_results_table$classicFisher <- as.numeric(gsub("<", "", go_results_table$classicFisher))
+
+ggplot(go_results_table, aes(x = reorder(Term, -classicFisher), y = -log10(classicFisher))) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "topGO Enrichment: Surface vs Core",
+    x = "GO Term",
+    y = "-log10(p-value)"
+  ) +
+  theme_minimal()
 ```

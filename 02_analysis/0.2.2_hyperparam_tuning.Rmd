@@ -24,8 +24,8 @@ train_genes <- readRDS(file.path(data_dir, "janesick_2023/processed/train_genes.
 setDT(iss_meta) #
 
 # 2. Define Optimization Grid
-radii <- seq(10, 30, by = 5)      # Adjust range as needed
-thresholds <- seq(0.6, 0.9, by = 0.1) # Adjust range as needed
+radii <- seq(10, 30, by = 2.5)      # Adjust range as needed
+thresholds <- seq(0.7, 0.95, by = 0.05) # Adjust range as needed
 grid <- expand.grid(radius = radii, threshold = thresholds)
 
 # 3. Iterative Optimization Loop
@@ -57,6 +57,7 @@ results <- map_df(1:nrow(grid), function(i) {
   tmp_meta$surface_class[invasive_idx] <- classification_vec
   
   # --- STEP B: SAVE SPATIAL PLOT ---
+  # Requirement 1: Spatial plots
   p_spatial <- ggplot(tmp_meta, aes(x = y_centroid, y = x_centroid, color = surface_class)) +
     geom_point(data = subset(tmp_meta, surface_class == "Other"), size = 0.01) +
     geom_point(data = subset(tmp_meta, surface_class != "Other"), size = 0.01) +
@@ -65,7 +66,7 @@ results <- map_df(1:nrow(grid), function(i) {
     theme_minimal() +
     labs(title = paste("Radius:", curr_r, "| Threshold:", curr_t))
   
-  ggsave(file.path(spatial_plots_dir, paste0(test_id, "_spatial.png")), plot = p_spatial, width = 7.87*1.75, height = 6.5*1.75)
+  ggsave(file.path(spatial_plots_dir, paste0(test_id, "_spatial.png")), plot = p_spatial, width = 13.7, height = 11.3)
   
   # --- STEP C: LDA 5-FOLD CV ---
   expr_mat <- as.data.frame(t(as.matrix(LayerData(iss_obj_invasive, layer = "data"))))
@@ -87,22 +88,37 @@ results <- map_df(1:nrow(grid), function(i) {
     return(as.data.frame(t(cm$byClass)))
   })
   
+  # Return more metrics for the heatmaps
   return(data.frame(
     radius = curr_r, 
     threshold = curr_t, 
-    balanced_accuracy = mean(cv_metrics$`Balanced Accuracy`, na.rm = TRUE)
+    balanced_accuracy = mean(cv_metrics$`Balanced Accuracy`, na.rm = TRUE),
+    sensitivity = mean(cv_metrics$Sensitivity, na.rm = TRUE),
+    specificity = mean(cv_metrics$Specificity, na.rm = TRUE)
   ))
 })
 
-# 4. FINAL GRID PLOT
-p_grid <- ggplot(results, aes(x = factor(radius), y = factor(threshold), fill = balanced_accuracy)) +
-  geom_tile(color = "white") +
-  scale_fill_viridis_c(option = "magma") +
-  geom_text(aes(label = round(balanced_accuracy, 3)), color = "white", size = 3) +
-  labs(title = "Optimization Heatmap: Balanced Accuracy",
-       x = "Search Radius", y = "Tumor Fraction Threshold", fill = "Bal. Acc") +
-  theme_minimal()
+# 4. FINAL GRID PLOTS
+# Helper function to generate standardized heatmaps
+make_heatmap <- function(data, fill_var, title, label) {
+  ggplot(data, aes(x = factor(radius), y = factor(threshold), fill = .data[[fill_var]])) +
+    geom_tile(color = "white") +
+    scale_fill_viridis_c(option = "magma") +
+    geom_text(aes(label = round(.data[[fill_var]], 3)), color = "white", size = 3) +
+    labs(title = title, x = "Search Radius", y = "Tumor Fraction Threshold", fill = label) +
+    theme_minimal()
+}
 
-ggsave(file.path(opt_dir, "optimization_heatmap.png"), plot = p_grid, width = 8, height = 6)
+# Requirement 2: Grid plot of (Sensitivity + Specificity) / 2
+p_bal_acc <- make_heatmap(results, "balanced_accuracy", "Optimization: Balanced Accuracy", "Bal. Acc")
+ggsave(file.path(opt_dir, "heatmap_balanced_accuracy.png"), p_bal_acc, width = 8, height = 6)
+
+# Requirement 3: Grid plot of Sensitivity
+p_sens <- make_heatmap(results, "sensitivity", "Optimization: Sensitivity (Core Prediction)", "Sens")
+ggsave(file.path(opt_dir, "heatmap_sensitivity.png"), p_sens, width = 8, height = 6)
+
+# Requirement 4: Grid plot of Specificity
+p_spec <- make_heatmap(results, "specificity", "Optimization: Specificity (Surface Prediction)", "Spec")
+ggsave(file.path(opt_dir, "heatmap_specificity.png"), p_spec, width = 8, height = 6)
 ```
 

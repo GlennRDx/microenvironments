@@ -16,10 +16,10 @@ wts_params <- list(
 # 0.2.1
 iss_params <- list(
   radius      = 25,    # Radius for neighbourhood definition
-  knn         = 25,    # Number of neighbours for KNN method
+  knn         = 20,    # Number of neighbours for KNN method
   centre_x    = 3249.27,  # Center X coordinate for zooming/plotting
   centre_y    = 2027.26,  # Center Y coordinate for zooming/plotting
-  threshold   = 0.85  # Threshold for Core vs Surface classification
+  threshold   = 0.9  # Threshold for Core vs Surface classification
 )
 
 # 0.3.1
@@ -55,5 +55,5 @@ prediction_params <- list(
 # 0.5.1
 validation_params <- list(
   n_pseudo_reps = 2,      # Number of pseudo-replicates
-  marker_method = "negbinom"  # Options: "MAST", "wilcox", "DESeq2", "negbinom"
+  marker_method = "wilcox"  # Options: "MAST", "wilcox", "DESeq2", "negbinom"
 )

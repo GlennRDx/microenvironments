@@ -137,6 +137,7 @@ cat("Filtered out (ambiguous):", nrow(results_df) - nrow(results_df_filtered), "
 cat("High-confidence class distribution:\n")
 print(table(results_df_filtered$predicted_class))
 ```
+
 # 6. Plot LDA
 ```{r}
 # 1. Prepare Stats for Plot Labels 
