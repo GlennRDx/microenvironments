@@ -40,7 +40,7 @@ setDT(iss_meta) # Set to data.table for speed
 start_time <- Sys.time()
 
 # 1. Prep coordinates
-coords <- iss_meta[, .(x_centroid, y_centroid)] #Q: what does the period do?
+coords <- iss_meta[, .(x_centroid, y_centroid)]
 
 # 2. Perform radius search (returns the indices)
 nn_result <- nn2(data = coords, query = coords, searchtype = "radius", radius = iss_params$radius, k = 200)
@@ -241,14 +241,69 @@ ggsave(file.path(fig_subdir, "p5_identify_shallow_core_cells.png"), plot = p5, d
 # 1. Create iss seurat object
 iss_obj <- CreateSeuratObject(counts = iss_expr, meta.data = as.data.frame(iss_meta))
 iss_obj_invasive <- subset(iss_obj, subset = Annotation == "Invasive_Tumor")
+```
 
+# Investigate Seq Depth of Cells
+```{r, fig.width=7.87*3, fig.height = 6.5*3, dpi=300, dev='tiff', out.width='100%'}
+# pal <- colorRampPalette(c("#3c2670", "#407068", "#edd100"))(10)
+pal <- colorRampPalette(c("red", "orange", "yellow", "green", "blue", "purple", "violet"))(10)
+qntls <- quantile(iss_obj_invasive$nCount_RNA, probs = seq(0, 1, length.out = 11))
+cell_cols <- pal[findInterval(iss_obj_invasive$nCount_RNA, qntls, all.inside = T)]
+
+par(bg = "black", mar = c(5, 4, 4, 8))
+plot(y= iss_obj_invasive$x_centroid, x = iss_obj_invasive$y_centroid, 
+     pch = 16, cex = 0.5, col = cell_cols, ylim = c(0, 4000), asp = 1)
+```
+
+```{r}
+ticks <- seq(0, max(iss_obj_invasive$nCount_RNA) + 10, by = 10)
+h <- hist(iss_obj_invasive$nCount_RNA, breaks = ticks, plot = F)
+bar_cols <- pal[findInterval(h$mids, qntls, all.inside = T)]
+plot(h, col = bar_cols)
+```
+
+# Filter out cells with low seq depth
+```{r, fig.width=7.87*3, fig.height = 6.5*3, dpi=300, dev='tiff', out.width='100%'}
+iss_obj_invasive <- subset(iss_obj_invasive, subset = nCount_RNA >= 50)
+```
+
+```{r, fig.width=7.87*3, fig.height = 6.5*3, dpi=300, dev='tiff', out.width='100%'}
+# Plot
+pal <- colorRampPalette(c("red", "orange", "yellow", "green", "blue", "purple", "violet"))(10)
+qntls <- quantile(iss_obj_invasive$nCount_RNA, probs = seq(0, 1, length.out = 11))
+cell_cols <- pal[findInterval(iss_obj_invasive$nCount_RNA, qntls, all.inside = T)]
+
+par(bg = "black", mar = c(5, 4, 4, 8))
+plot(y= iss_obj_invasive$x_centroid, x = iss_obj_invasive$y_centroid, 
+     pch = 16, cex = 0.5, col = cell_cols, ylim = c(0, 4000), asp = 1)
+```
+
+```{r}
+ticks <- seq(0, max(iss_obj_invasive$nCount_RNA) + 10, by = 10)
+h <- hist(iss_obj_invasive$nCount_RNA, breaks = ticks, plot = F)
+bar_cols <- pal[findInterval(h$mids, qntls, all.inside = T)]
+plot(h, col = bar_cols)
+```
+
+```{r}
 # 2. Normalise with log1p
-raw_counts <- GetAssayData(iss_obj_invasive, assay = "RNA", layer = "counts") # extract
-log_transformed_counts <- log1p(raw_counts) # log transform
-iss_obj_invasive <- SetAssayData( # place into obj
-  iss_obj_invasive, 
+# raw_counts <- GetAssayData(iss_obj_invasive, assay = "RNA", layer = "counts") # extract
+# log_transformed_counts <- log1p(raw_counts) # log transform
+# iss_obj_invasive <- SetAssayData( # place into obj
+#   iss_obj_invasive, 
+#   layer = "data", 
+#   new.data = log_transformed_counts
+# )
+
+# 2. Alternative Normalise with CPM scale
+raw_counts <- GetAssayData(iss_obj_invasive, assay = "RNA", layer = "counts")
+lib_size <- colSums(raw_counts)
+cpm_counts <- t(t(raw_counts) / lib_size) * 1e6
+log_cpm_counts <- log1p(cpm_counts)
+iss_obj_invasive <- SetAssayData(
+  object = iss_obj_invasive, 
   layer = "data", 
-  new.data = log_transformed_counts
+  new.data = log_cpm_counts
 )
 
 # 3. Feature selection & dim. reduction
@@ -342,8 +397,8 @@ for (current_cluster in clusters) {
 # 5. classify based on clusters (manual hard-code annotation)
 iss_meta <- iss_meta %>%
   mutate(surface_class_clusters = case_when(
-    cluster %in% c("1", "2", "3", "4") ~ "Core",
-    cluster %in% c("5", "6", "7") ~ "Surface",
+    cluster %in% c("1", "2", "3", "5", "6") ~ "Core",
+    cluster %in% c("4", "7") ~ "Surface",
     TRUE ~ "Other"
   ))
 

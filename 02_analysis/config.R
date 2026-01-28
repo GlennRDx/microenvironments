@@ -4,7 +4,7 @@ data_dir <- file.path(root_dir, "01_data")
 figs_dir <- file.path(root_dir, "03_figures")
 
 # General parameters
-classification_method <- "surface_class_radius" # Options: "surface_class_nn", "surface_class_clusters", "surface_class_radius"
+classification_method <- "surface_class_clusters" # Options: "surface_class_nn", "surface_class_clusters", "surface_class_radius"
 
 # 0.1.1
 wts_params <- list(
@@ -55,5 +55,5 @@ prediction_params <- list(
 # 0.5.1
 validation_params <- list(
   n_pseudo_reps = 2,      # Number of pseudo-replicates
-  marker_method = "wilcox"  # Options: "MAST", "wilcox", "DESeq2", "negbinom"
+  marker_method = "negbinom"  # Options: "MAST", "wilcox", "DESeq2", "negbinom"
 )

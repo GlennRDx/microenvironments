@@ -1,0 +1,40 @@
+---
+title: "seq_depth_investigation"
+output: html_document
+---
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+# Load config.R
+source("config.R") 
+
+# Set root directory using the variable from config
+knitr::opts_knit$set(root.dir = data_dir)
+
+# Define figure directory based on your request
+fig_subdir <- file.path(figs_dir, "0.3.1")
+if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
+```
+
+
+```{r}
+iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
+```
+
+```{r, fig.width=7.87*3, fig.height = 6.5*3, dpi=300, dev='tiff', out.width='100%'}
+# pal <- colorRampPalette(c("#3c2670", "#407068", "#edd100"))(10)
+pal <- colorRampPalette(c("red", "orange", "yellow", "green", "blue", "purple", "violet"))(10)
+qntls <- quantile(iss_obj_invasive$nCount_RNA, probs = seq(0, 1, length.out = 11))
+cell_cols <- pal[findInterval(iss_obj_invasive$nCount_RNA, qntls, all.inside = T)]
+
+par(bg = "black", mar = c(5, 4, 4, 8))
+plot(y= iss_obj_invasive$x_centroid, x = iss_obj_invasive$y_centroid, 
+     pch = 16, cex = 0.5, col = cell_cols, ylim = c(0, 4000), asp = 1)
+```
+```{r}
+ticks <- seq(0, max(iss_obj_invasive$nCount_RNA) + 10, by = 10)
+h <- hist(iss_obj_invasive$nCount_RNA, breaks = ticks, plot = F)
+bar_cols <- pal[findInterval(h$mids, qntls, all.inside = T)]
+plot(h, col = bar_cols)
+```
+
+

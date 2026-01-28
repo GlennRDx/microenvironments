@@ -20,6 +20,7 @@ if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
 library(Seurat)
 library(dplyr)
 library(EnhancedVolcano)
+library(clusterProfiler)
 library(topGO)
 library(org.Hs.eg.db)
 library(ggplot2)
@@ -35,46 +36,65 @@ wts_obj <- readRDS("janesick_2023/processed/wts_obj_processed_predicted.RDS")
 Idents(wts_obj) <- "predicted_surface_class"
 
 # Find markers comparing Surface (ident.1) vs Core (ident.2)
-dge_results <- FindMarkers(
+dge_results_negbinom <- FindMarkers(
   object = wts_obj,
   ident.1 = "Surface",
   ident.2 = "Core",
   test.use = "negbinom",
-  logfc.threshold = 0.25,
+  logfc.threshold = 0.1,
+  min.pct = 0.1
+)
+
+dge_results_wilcoxon <- FindMarkers(
+  object = wts_obj,
+  ident.1 = "Surface",
+  ident.2 = "Core",
+  test.use = "wilcox",
+  logfc.threshold = 0.1,
   min.pct = 0.1
 )
 
 # Filter for statistically significant genes
-dge_sig <- dge_results %>%
+dge_sig_negbinom <- dge_results_negbinom %>%
+  filter(p_val_adj < 0.05) %>%
+  arrange(desc(avg_log2FC))
+
+dge_sig_wilcoxon <- dge_results_wilcoxon %>%
   filter(p_val_adj < 0.05) %>%
   arrange(desc(avg_log2FC))
 ```
 
 # 3. Volcano Plot
-```{r}
-# Create Volcano Plot
-p_volc <- EnhancedVolcano(
-  toptable = dge_results,
-  lab = rownames(dge_results),
-  x = 'avg_log2FC',
-  y = 'p_val_adj',
-  title = 'Surface vs. Core Invasive Tumor',
-  subtitle = 'Positive FC = Surface | Negative FC = Core',
-  pCutoff = 0.05,
-  FCcutoff = 0.5,
-  pointSize = 2.0,
-  labSize = 4.0
-)
 
-print(p_volc)
+```{r}
+# Plot
+plot(dge_results_negbinom$avg_log2FC, -log10(dge_results_negbinom$p_val_adj),
+     main = "Surface vs. Core (negbinom)", 
+     xlab = "log2 Fold Change", 
+     ylab = "-log10(adj p-value)",
+     pch = 1, cex = 0.5)   
+
+# Threshold lines
+abline(h = -log10(1e-50), col = "black", lty = 2) # Horizontal p-adj line
+abline(v = c(-0.5, 0.5), col = "black", lty = 2) # Vertical FC lines
+
+plot(dge_results_wilcoxon$avg_log2FC, -log10(dge_results_wilcoxon$p_val_adj),
+     main = "Surface vs. Core (wilcoxon)", 
+     xlab = "log2 Fold Change", 
+     ylab = "-log10(adj p-value)",
+     pch = 1, cex = 0.5)   
+
+# Threshold lines
+abline(h = -log10(1e-50), col = "black", lty = 2) # Horizontal p-adj line
+abline(v = c(-0.5, 0.5), col = "black", lty = 2) # Vertical FC lines
 ```
 
 # 4. GO enrichment
-```{r, fig.width=7.87*1.25, fig.height = 6.5*1.25, dpi=300, dev='tiff', out.width='100%'}
-# 1. Get list of significant gene names
-genes_to_test <- rownames(dge_sig)
+```{r, fig.width=7.87*2, fig.height = 6.5*2, dpi=300, dev='tiff', out.width='100%'}
+# Significant gene names
+genes_to_test <- rownames(dge_sig_negbinom)
 
-# 2. Convert Gene Symbols to Entrez IDs (required for clusterProfiler)
+# Convert Gene Symbols to Entrez IDs
 gene_ids <- bitr(
   genes_to_test, 
   fromType = "SYMBOL", 
@@ -82,68 +102,49 @@ gene_ids <- bitr(
   OrgDb = org.Hs.eg.db
 )
 
-# 3. Run GO Enrichment (Biological Process)
+# 3. GO Enrichment
 go_results <- enrichGO(
   gene = gene_ids$ENTREZID,
   OrgDb = org.Hs.eg.db,
-  ont = "BP",           # Biological Process
+  ont = "BP",
   pAdjustMethod = "BH",
   pvalueCutoff = 0.05,
   readable = TRUE       # Converts IDs back to symbols in output
 )
 
-# 4. Plot top 15 pathways
-dotplot(go_results, showCategory = 15) + 
-  ggtitle("GO Enrichment: Surface & Core DGE")
+# 4. Plot pathways
+enrichplot::dotplot(go_results, showCategory = 100)
 ```
-
 # topGO
 ```{r}
-# 1. Define the Gene Universe and the "Interesting" genes
-# topGO needs a named vector where names are gene symbols and values are p-values
-all_genes <- dge_results$p_val_adj
-names(all_genes) <- rownames(dge_results)
+# Define the Gene Universe (names = gene symb, values = padj)
+all_genes <- dge_results_negbinom$p_val_adj
+names(all_genes) <- rownames(dge_results_negbinom)
 
-# 2. Create a selection function (identifies significant genes)
+# Create a selection function (identifies significant genes)
 topDiffGenes <- function(allScore) {
   return(allScore < 0.05)
 }
 
-# 3. Initialize topGOdata object
-# Using 'mapping = org.Hs.eg.db' and 'ID = symbol' to match Seurat output
+# Create topGOdata object
 go_data <- new("topGOdata",
-  ontology = "BP",              # Biological Process
+  ontology = "BP",
   allGenes = all_genes,
   geneSel = topDiffGenes,
   annot = annFUN.org,
   mapping = "org.Hs.eg.db",
-  ID = "symbol"                 # Assumes Seurat rownames are symbols
+  ID = "symbol"
 )
 
-# 4. Run Statistical Tests
-# 'classic' is standard; 'elim' is more conservative/specific to GO hierarchy
+# 4. Run fisher test
 result_fisher <- runTest(go_data, algorithm = "classic", statistic = "fisher")
 
-# 5. Extract Results Table
+# 5. Results Table
 go_results_table <- GenTable(
   go_data, 
   classicFisher = result_fisher, 
   orderBy = "classicFisher", 
   ranksOf = "classicFisher", 
-  topNodes = 20
+  topNodes = 50
 )
-
-# 6. Visualization (Manual ggplot2 barplot)
-# Clean the p-value column (sometimes has < signs)
-go_results_table$classicFisher <- as.numeric(gsub("<", "", go_results_table$classicFisher))
-
-ggplot(go_results_table, aes(x = reorder(Term, -classicFisher), y = -log10(classicFisher))) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  coord_flip() +
-  labs(
-    title = "topGO Enrichment: Surface vs Core",
-    x = "GO Term",
-    y = "-log10(p-value)"
-  ) +
-  theme_minimal()
 ```
