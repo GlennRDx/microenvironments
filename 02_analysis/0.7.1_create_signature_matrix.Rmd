@@ -1,0 +1,142 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=0.2in
+---
+
+# 1. Load libraries and data
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+# Load config.R
+source("config.R") 
+
+# Set root directory using the variable from config
+knitr::opts_knit$set(root.dir = data_dir)
+
+# Define figure directory
+fig_subdir <- file.path(figs_dir, "0.7.1")
+if(!dir.exists(fig_subdir)) dir.create(fig_subdir, recursive = TRUE)
+
+library(Seurat)
+library(dplyr)
+library(data.table)
+library(tibble)
+```
+
+```{r}
+# Load data
+wts_obj <- readRDS("janesick_2023/processed/wts_obj_processed_predicted.RDS")
+
+counts <- GetAssayData(object = wts_obj, assay = "RNA", layer = "counts")
+
+cpm <- t(t(counts) / colSums(counts))
+
+summary(colSums(cpm))
+
+# log_cpm <- log1p(cpm)
+
+# summary(colSums(log_cpm))
+# hist(colSums(log_cpm))
+
+# nCounts <- colSums(counts)
+# 
+# plot(y = colSums(log_cpm), x = nCounts, pch = 16, cex = 0.3, xaxt = "n")
+# axis(side = 1, at = pretty(nCounts, n = 20))
+# 
+# labs <- wts_obj$microenv_prediction
+# levels(labs) <- c(levels(labs), "Other")
+# labs[is.na(labs)] <- "Other"
+```
+
+```{r}
+raw_gene_means <- rowMeans(counts)
+raw_gene_variances <- apply(counts, MARGIN = 1, FUN = var)
+
+cpm_log_gene_means <- rowMeans(log_cpm)
+cpm_log_gene_variances <- apply(log_cpm, MARGIN = 1, FUN = var)
+
+cpm_gene_means <- rowMeans(cpm)
+cpm_gene_variances <- apply(cpm, MARGIN = 1, var)
+
+plot(y = raw_gene_variances, x = raw_gene_means, log = "xy", pch = 16, cex = 0.1)
+abline(0, 1, col = "red", lwd = 2) # Variance = Mean line
+
+plot(y = cpm_gene_variances, x = cpm_gene_means, log = "xy", pch = 16, cex = 0.1)
+abline(0, 1, col = "red", lwd = 2) # Variance = Mean line
+
+plot(y = cpm_log_gene_variances, x = cpm_log_gene_means, log = "xy", pch = 16, cex = 0.1)
+abline(0, 1, col = "red", lwd = 2) # Variance = Mean line
+
+```
+
+```{r}
+# CDH2
+boxplot(log_cpm["CYP24A1",] ~ labs, pch = 16, cex = 0.4)
+```
+
+
+```{r}
+# DGE to get genes for sig matrix (maybe can export data from 0.6.1 and use that)
+# wilcoxon good to find marker genes: https://pmc.ncbi.nlm.nih.gov/articles/PMC10895860/#:~:text=Conclusions,Supplementary%20Information
+
+Idents(wts_obj) <- "microenv_prediction"
+
+markers <- FindAllMarkers(
+  object = wts_obj,
+  only.pos = TRUE,
+  test.use = "wilcox"
+)
+```
+
+```{r}
+top_markers <- markers %>%
+  filter(myAUC > 0.7) %>%
+  top_n(n = 100, wt = myAUC)
+
+# View(top_markers)
+```
+
+```{r}
+temp_df <- top_markers
+
+temp_df$avg_log2FC[temp_df$cluster == "Core"] <- temp_df$avg_log2FC[temp_df$cluster == "Core"] * -1
+
+# plot(temp_df$avg_log2FC, -log10(temp_df$p_val_adj))
+```
+
+```{r}
+# get list of unique genes from the top markers table
+sig_genes <- unique(top_markers$gene)
+
+# Extract expression data for these genes
+avg_expr <- AverageExpression(
+  wts_obj,
+  features = sig_genes,
+  group.by = "microenv_prediction",
+  slot = "data"
+)$RNA
+
+sig_matrix <- avg_expr %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "Gene")
+View(sig_matrix)
+```
+
+```{r}
+# export data for CIBERSORT
+out_file <- file.path("janesick_2023/processed", "CIBERSORT_miroenv_sigmatrix_roc.txt")
+
+write.table(
+  sig_matrix,
+  file = out_file,
+  sep = "\t",
+  quote = FALSE,
+  row.names = FALSE
+)
+```
+
+```{r}
+
+```
+
+testtest

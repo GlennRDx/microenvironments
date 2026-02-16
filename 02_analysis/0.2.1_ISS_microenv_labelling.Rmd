@@ -245,8 +245,8 @@ iss_obj_invasive <- subset(iss_obj, subset = Annotation == "Invasive_Tumor")
 
 # Investigate Seq Depth of Cells
 ```{r, fig.width=7.87*3, fig.height = 6.5*3, dpi=300, dev='tiff', out.width='100%'}
-# pal <- colorRampPalette(c("#3c2670", "#407068", "#edd100"))(10)
-pal <- colorRampPalette(c("red", "orange", "yellow", "green", "blue", "purple", "violet"))(10)
+pal <- colorRampPalette(c("#3c2670", "#407068", "#edd100"))(10)
+# pal <- colorRampPalette(c("red", "orange", "yellow", "green", "blue", "purple", "violet"))(10)
 qntls <- quantile(iss_obj_invasive$nCount_RNA, probs = seq(0, 1, length.out = 11))
 cell_cols <- pal[findInterval(iss_obj_invasive$nCount_RNA, qntls, all.inside = T)]
 
@@ -269,7 +269,6 @@ iss_obj_invasive <- subset(iss_obj_invasive, subset = nCount_RNA >= 50)
 
 ```{r, fig.width=7.87*3, fig.height = 6.5*3, dpi=300, dev='tiff', out.width='100%'}
 # Plot
-pal <- colorRampPalette(c("red", "orange", "yellow", "green", "blue", "purple", "violet"))(10)
 qntls <- quantile(iss_obj_invasive$nCount_RNA, probs = seq(0, 1, length.out = 11))
 cell_cols <- pal[findInterval(iss_obj_invasive$nCount_RNA, qntls, all.inside = T)]
 
@@ -392,6 +391,18 @@ for (current_cluster in clusters) {
 }
 ```
 
+```{r}
+# Bar plot of abundance of cells in each cluster superimposed with proportion of those found in iss_obj_invasive$surface_class_radius
+cell_counts <- table(iss_meta$surface_class_radius, iss_meta$cluster)
+cell_counts <- cell_counts[rownames(cell_counts) != "Other", ]
+
+cell_counts_sorted <- cell_counts[, order(cell_counts["Core", ] / colSums(cell_counts), decreasing = TRUE)]
+
+cols <- c("#fac0da", "#C90065")
+
+barplot(height = cell_counts, col = cols, legend.text = T)
+```
+
 
 ```{r}
 # 5. classify based on clusters (manual hard-code annotation)
@@ -469,3 +480,13 @@ EnhancedVolcano(markers,
     legendIconSize = 3.0
 )
 ```
+
+# Subsample ISS counts to n counts
+```{r}
+# calculate sum nCount of core cells
+core <- subset(iss_obj_invasive, subset = surface_class_radius == "Core")
+surface <- subset(iss_obj_invasive, subset = surface_class_radius == "Surface")
+mean(core$nCount_RNA)
+mean(surface$nCount_RNA)
+```
+test

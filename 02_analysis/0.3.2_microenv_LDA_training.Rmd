@@ -23,11 +23,11 @@ library(dplyr)
 library(data.table, quietly = T)
 library(ggplot2)
 library(caret)
+library(Seurat)
 ```
 
 ```{r}
 # Load Data
-# iss_expr <- readRDS("janesick_2023/raw_clean/iss_expr_clean.RDS")
 iss_obj_invasive <- readRDS("janesick_2023/processed/iss_obj_invasive.RDS")
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
 ```
@@ -51,7 +51,9 @@ saveRDS(train_genes, file = "janesick_2023/processed/train_genes.RDS")
 ```{r}
 # Manual Log Transformation
 raw_counts <- GetAssayData(iss_obj_invasive, assay = "RNA", layer = "counts")
-log_transformed_counts <- log1p(raw_counts)
+cpm <-t(t(raw_counts) / colSums(raw_counts)) * 1e6
+log_transformed_counts <- log1p(cpm)
+
 iss_obj_invasive <- SetAssayData(iss_obj_invasive, layer = "data", new.data = log_transformed_counts)
 ```
 
@@ -94,8 +96,8 @@ for(i in 1:5) {
   test_data  <- inv_tumour_expr[test_idx, ]
   
   # Select specific features (genes)
-  train_data_filt <- train_data %>% dplyr::select(surface_class, all_of(train_genes))
-  test_data_filt  <- test_data  %>% dplyr::select(all_of(train_genes))
+  train_data_filt <- train_data %>% dplyr::select(surface_class, all_of(shared_genes))
+  test_data_filt  <- test_data  %>% dplyr::select(all_of(shared_genes))
   
   # Fit LDA on Training portion
   fit_cv <- lda(x = train_data_filt %>% dplyr::select(-surface_class), 
@@ -172,19 +174,34 @@ p_spatial
 ggsave(filename = file.path(fig_subdir, paste0("CV_spatial_errors_", classification_method, ".png")), plot = p_spatial, dpi = 300)
 ```
 
-# 9. Train final LDA model using all cells
+# 9. Validation model (2/3 genes, 100% cells)
+```{r}
+validation_data <- inv_tumour_expr %>%
+  dplyr::select(surface_class, all_of(train_genes))
+
+# Fit Validation LDA
+fit_lda_val <- lda(
+  x = validation_data %>% dplyr::select(-surface_class), 
+  grouping = validation_data$surface_class
+)
+
+# Save
+saveRDS(fit_lda_val, file = "janesick_2023/processed/fit_lda_val.RDS")
+```
+
+# 9. Train final LDA model using all cells, all genes
 ```{r}
 # Filter for training genes
-final_train_data <- inv_tumour_expr %>%
-  dplyr::select(surface_class, all_of(train_genes))
+final_data <- inv_tumour_expr %>%
+  dplyr::select(surface_class, all_of(shared_genes))
 
 # Fit Final LDA
 fit_lda_final <- lda(
-  x = final_train_data %>% dplyr::select(-surface_class), 
-  grouping = final_train_data$surface_class
+  x = final_data %>% dplyr::select(-surface_class), 
+  grouping = final_data$surface_class
 )
 
 # Save
 saveRDS(fit_lda_final, file = "janesick_2023/processed/fit_lda.RDS")
 ```
-
+test

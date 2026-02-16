@@ -33,7 +33,19 @@ library(scry) # bioconductor
 library(SingleCellExperiment) # bioconductor
 ```
 
-# 0.1.1 - Whole Trasncriptome Sequencing (wts) Data 
+# 0.1.1 - scRNA-seq Data Cleaning
+1. Import files:  
+- Read in the expression data and meta data as dataframes
+
+2. Expression Data Cleaning:  
+- Restructure (transpose) expression data so rows are genes, columns are cells.
+- Map cell barcodes from meta data to expression data (this is risky as we're not positive that they are in the correct order)
+
+3. Meta Data Cleaning:
+- Clean the dataframe by assigning the barcodes to the rownames instead of a "Barcode" column.
+- Create "Cancerous" column by labelling the cancerous cell types as "Cancerous"
+
+4. Use two files to create Seurat object and save the three files (expr, meta, and sobj) in RDS format.
 
 ```{r}
 # Read scRNA-seq expression data
@@ -46,7 +58,7 @@ wts_expr_clean <- as.data.frame(t(wts_expr_clean))
 # Important - no barcodes present in expression file so I assume they are in the same order as the meta file (and assign them to the expression matrix)
 colnames(wts_expr_clean) <- wts_meta_clean$Barcode
 
-# Clean the formatting of the metadata df
+# Assign the cell barcodes to the rownames instead of individual column "Barcode" column
 rownames(wts_meta_clean) <- wts_meta_clean$Barcode
 wts_meta_clean <- wts_meta_clean[, "Annotation", drop = FALSE]
 
@@ -94,6 +106,16 @@ rm(wts_expr_clean, wts_meta_clean, cancerous_map, wts_obj_clean); gc()
 ```
 
 # 0.2.2 - ISS data
+1. Import files:  
+- Read in the expression data and two metadata files (ISS_cell_types, and ISS_cells) as dataframes
+
+2. Expression Data Cleaning:  
+- Set rownames to gene names using the first column then delete the first column.
+
+3. Meta Data Cleaning:  
+- Meta data is stored in two separate files "ISS_cell_types.txt" and "ISS_cells.csv".  
+- Clean first file so it is a single column of cell types.  
+- Now add this to the other meta data file which contains cell coords (and other metadata).  
 
 ```{r}
 # Load & clean ISS expression matrix
@@ -122,6 +144,7 @@ rm(iss_expr_clean, iss_meta_clean); gc()
 ```
 
 # 0.3.1
+- Find the genes shared between the two datasets and save to an RDS file. 
 ```{r}
 # find shared genes between WTD and ISS data.
 shared_genes <- intersect(iss_genes, wts_genes)

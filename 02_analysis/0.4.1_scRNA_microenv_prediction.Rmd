@@ -27,10 +27,15 @@ library(tidyverse)
 ```
 
 ```{r}
-# load files
+# load lda models
 fit_lda <- readRDS("janesick_2023/processed/fit_lda.RDS")
+fit_lda_val <- readRDS("janesick_2023/processed/fit_lda_val.RDS")
+
+# load gene lists
 shared_genes <- readRDS("janesick_2023/processed/shared_genes.RDS")
-genes_to_keep <- readRDS("janesick_2023/processed/genes_to_keep.RDS")
+train_genes <- readRDS("janesick_2023/processed/train_genes.RDS")
+
+# Load Data
 wts_obj <- readRDS("janesick_2023/processed/wts_obj_processed.RDS")
 wts_expr_clean <- fread("janesick_2023/raw/scRNAseq_data_quantile_matched.txt") %>% as.data.frame()
 ```
@@ -86,135 +91,145 @@ wts_obj_invasive <- SetAssayData(
 inv_tumour_expr <- as.data.frame(t(as.matrix(LayerData(wts_obj_invasive, layer = "data"))))
 ```
 
-# 4. Align genes between two data sets
+
+# 5. Apply LDA Predictions
 ```{r}
-# 1. Align columns (genes) to match the LDA model order exactly
-expr_df_aligned <- inv_tumour_expr[, genes_to_keep]
+# --- Prediction 1: Final Model (100% genes) ---
+# Ensure columns match shared_genes
+data_final <- inv_tumour_expr[, shared_genes]
+pred_final <- predict(fit_lda, newdata = data_final)
 
-# 2. Verify check
-if(ncol(expr_df_aligned) != length(genes_to_keep)) {
-  stop("Error: Column count mismatch. Verify that all training genes are present in scRNA-seq data.")
-}
-```
 
-# 5. Apply LDA model to predict surface / core labels
-```{r}
-# Make predictions
-lda_predictions <- predict(fit_lda, newdata = expr_df_aligned)
+# --- Prediction 2: Validation Model (2/3 genes) ---
+# Ensure columns match train_genes only
+data_val <- inv_tumour_expr[, train_genes]
+pred_val <- predict(fit_lda_val, newdata = data_val)
 
-# Extract predicted classes and posterior probabilities
-predicted_classes <- lda_predictions$class
-posterior_probs <- lda_predictions$posterior
-lda_scores <- lda_predictions$x
 
-# Create results dataframe
+# --- compile Results ---
 results_df <- data.frame(
-  cell_id = rownames(expr_df_aligned),
-  predicted_class = predicted_classes,
-  prob_core = posterior_probs[, "Core"],
-  prob_surface = posterior_probs[, "Surface"],
-  LD1 = lda_scores[, 1],
-  annotation = wts_obj_invasive$Annotation[match(rownames(expr_df_aligned), colnames(wts_obj_invasive))],
+  cell_id = rownames(inv_tumour_expr),
+  
+  # Final Model Results
+  microenv_prediction = pred_final$class,
+  prob_core = pred_final$posterior[, "Core"],
+  prob_surface = pred_final$posterior[, "Surface"],
+  LD1 = pred_final$x[, 1],
+  
+  # Validation Model Results
+  microenv_lda_val = pred_val$class,
+  
   stringsAsFactors = FALSE
 )
 
-# results_df_filtered <- results_df %>%
-  # filter(LD1 < -0.5 | LD1 > -0.2)
-
-# identify the ma probability for each cell and then filter if less than the prob_threshold
+# Filter Logic (Based on Final Model)
 results_df <- results_df %>%
   mutate(max_prob = pmax(prob_core, prob_surface),
          status = ifelse(max_prob >= prediction_params$prob_threshold, "High Confidence", "Ambiguous"))
 
 results_df_filtered <- results_df %>%
   filter(status == "High Confidence")
-
-# Summary of predictions (UPDATE THIS)
-cat("\n=== Prediction Summary ===\n")
-cat("Total cells predicted:", nrow(results_df), "\n")
-cat("High-confidence cells:", nrow(results_df_filtered), "\n")
-cat("Filtered out (ambiguous):", nrow(results_df) - nrow(results_df_filtered), "\n\n")
-cat("High-confidence class distribution:\n")
-print(table(results_df_filtered$predicted_class))
 ```
 
 # 6. Plot LDA
 ```{r}
-# 1. Prepare Stats for Plot Labels 
-# Count stats from the full results_df
-n_high_conf_core <- sum(results_df$predicted_class == "Core" & results_df$status == "High Confidence")
-n_high_conf_surf <- sum(results_df$predicted_class == "Surface" & results_df$status == "High Confidence")
+# 1. Prepare Stats
+n_high_conf_core <- sum(results_df$microenv_prediction == "Core" & results_df$status == "High Confidence")
+n_high_conf_surf <- sum(results_df$microenv_prediction == "Surface" & results_df$status == "High Confidence")
 n_ambiguous <- sum(results_df$status == "Ambiguous")
 
-
-
-# 2. Plot Labels
 stats_label <- paste0(
   "High Conf. Core: ", n_high_conf_core, "\n",
   "High Conf. Surface: ", n_high_conf_surf, "\n",
   "Ambiguous: ", n_ambiguous
 )
-method_labels <- c(
-  "surface_class_radius"   = "Radius Definition",
-  "surface_class_nn"       = "KNN Definition",
-  "surface_class_clusters" = "Unsupervised Clustering"
-)
-current_label <- method_labels[classification_method]
-if(is.na(current_label)) current_label <- classification_method
 
-
-
-# 3. Plot 
-p_pred <- ggplot(results_df, aes(x = LD1, fill = predicted_class)) +
+# 2. Plot
+p_pred <- ggplot(results_df, aes(x = LD1, fill = microenv_prediction)) +
   geom_density(alpha = 0.5) +
-  
-  # Add the stats box
   annotate("label", x = Inf, y = Inf, label = stats_label, 
            hjust = 1.1, vjust = 1.1, size = 3.5, 
            fill = "white", alpha = 0.8, color = "black") +
-  
   theme_minimal() +
   labs(
-    title = "LDA Projection of scRNA-seq Predictions", 
-    subtitle = paste0("Model Trained on: ", current_label),
+    title = "LDA Projection of scRNA-seq (Final Model)",
     x = "LD1", 
     y = "Density",
     fill = "Predicted Class"
   ) +
-  theme(
-    plot.title = element_text(face = "bold", size = 12),
-    plot.subtitle = element_text(size = 10, color = "gray30")
-  ); p_pred
+  theme(plot.title = element_text(face = "bold", size = 12)); p_pred
 
-
-# 4. Save
+# Save
 ggsave(filename = file.path(fig_subdir, paste0("scRNA_LDA_projection_", classification_method, ".png")), plot = p_pred, dpi = 300)
 ```
 
 # 7. Add Predictions to Seurat Object
 ```{r}
-# Create a dataframe for the new metadata, ensuring row names are cell IDs
+# Create metadata dataframe
 meta_to_add <- results_df_filtered %>%
   tibble::remove_rownames() %>%
-  dplyr::select(cell_id, predicted_surface_class = predicted_class, prob_core, LD1_score = LD1) %>%
+  dplyr::select(cell_id, microenv_prediction, microenv_lda_val, prob_core, LD1) %>%
   tibble::column_to_rownames("cell_id")
 
-# Add to invasive object
+# 1. Add to invasive object
 wts_obj_invasive <- AddMetaData(wts_obj_invasive, metadata = meta_to_add)
 
-# Add to full object (cells not in the list will automatically get NAs)
-wts_obj <- AddMetaData(wts_obj, metadata = meta_to_add)
-
-# Quick check
-print(table(wts_obj$predicted_surface_class, useNA = "ifany"))
+# 2. Add to full object (re-load original processed object to be safe)
+wts_obj_full <- readRDS("janesick_2023/processed/wts_obj_processed.RDS")
+wts_obj_full <- AddMetaData(wts_obj_full, metadata = meta_to_add)
 ```
 
 # 8. Save
 ```{r}
 saveRDS(wts_obj_invasive, file = "janesick_2023/processed/wts_obj_invasive.RDS")
-
-# Pass the predicted labels back to the original wts obj
-wts_obj <- readRDS("janesick_2023/processed/wts_obj_processed.RDS")
-wts_obj <- AddMetaData(wts_obj, metadata = meta_to_add) # add metadata
-saveRDS(wts_obj, file = "janesick_2023/processed/wts_obj_processed_predicted.RDS")
+saveRDS(wts_obj_full, file = "janesick_2023/processed/wts_obj_processed_predicted.RDS")
 ```
+
+###########
+```{r}
+hist(wts_obj_invasive$nCount_RNA, breaks = 200) 
+```
+
+```{r}
+plot_data <- wts_obj_invasive@meta.data
+p_bias_check <- plot_data %>%
+  filter(!is.na(predicted_surface_class)) %>%
+  ggplot(aes(x = predicted_surface_class, y = nCount_RNA, fill = predicted_surface_class)) +
+  
+  # Violin for distribution shape
+  geom_violin(trim = FALSE, alpha = 0.6, scale = "width") +
+  
+  # Boxplot inside to show median and quartiles clearly
+  geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+  
+  # Add points (jittered) if you want to see individual cells (optional, can be messy if N is large)
+  # geom_jitter(width = 0.1, size = 0.5, alpha = 0.2) + 
+  
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set1") + # Or use specific colors like c("Core"="blue", "Surface"="red")
+  labs(
+    title = "Sequencing Depth Bias Check",
+    subtitle = "",
+    x = "Predicted Class",
+    y = "Sequencing Depth (Total UMIs)",
+    fill = "Class"
+  ) +
+  theme(legend.position = "none")
+p_bias_check
+```
+
+```{r}
+# Create stacked barplot of predictions by depth
+barplot(table(wts_obj_invasive$predicted_surface_class, cut(wts_obj_invasive$nCount_RNA, 200)),
+        legend = TRUE, 
+        las = 2, 
+        main = "Predictions by Depth")
+```
+
+```{r}
+barplot(prop.table(table(wts_obj_invasive$predicted_surface_class, cut(wts_obj_invasive$nCount_RNA, 200)), 2),
+        legend = TRUE, 
+        las = 2, 
+        main = "Proportion of Predictions by Depth")
+```
+test

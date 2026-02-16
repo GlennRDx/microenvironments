@@ -238,3 +238,115 @@ DimPlot(wts_obj, reduction = "umap", group.by = "Annotation") + ggtitle("UMAP")
 ```{r}
 saveRDS(wts_obj, file = file.path(data_dir, "janesick_2023/processed/wts_obj_processed.RDS"))
 ```
+
+
+
+#### Clustering Invasive Tumour Cells ####
+```{r}
+#### Clustering Invasive Tumour Cells ####
+
+# 1. Subset the object
+# Note: Ensure "Invasive_Tumor" matches your exact factor level in Annotation
+invasive_obj <- subset(wts_obj, subset = Annotation == "Invasive_Tumor")
+
+# 2. Re-run Feature Selection 
+# We do this because genes that were variable across the whole tissue 
+# might not be the ones that distinguish tumor subtypes.
+sce_inv <- as.SingleCellExperiment(invasive_obj, assay = 'RNA')
+sce_inv <- devianceFeatureSelection(sce_inv, assay = "counts")
+bin_dev_inv <- rowData(sce_inv)$binomial_deviance
+VariableFeatures(invasive_obj) <- names(sort(bin_dev_inv, decreasing = TRUE)[1:2000])
+
+# 3. Re-scale and Re-run PCA
+invasive_obj <- ScaleData(invasive_obj, features = VariableFeatures(invasive_obj))
+invasive_obj <- RunPCA(invasive_obj, verbose = FALSE)
+
+# 4. Find Neighbors and Clusters
+# Adjust resolution as needed; higher resolution = more clusters
+invasive_obj <- FindNeighbors(invasive_obj, dims = 1:20)
+invasive_obj <- FindClusters(invasive_obj, resolution = 0.1)
+
+# 5. Run UMAP on the new PCA
+invasive_obj <- RunUMAP(invasive_obj, dims = 1:20)
+
+# 6. Visualise
+p_inv <- DimPlot(invasive_obj, reduction = "umap", label = TRUE) + 
+  ggtitle("UMAP: Invasive Tumour Sub-clusters")
+p_inv
+
+# Optional: Save the sub-object
+# saveRDS(invasive_obj, file = file.path(data_dir, "janesick_2023/processed/invasive_tumor_subset.RDS"))
+```
+
+```{r}
+# Ensure identity is set to the new clusters
+Idents(invasive_obj) <- "seurat_clusters"
+
+# Find markers for all clusters (Pre-filter to speed up)
+tumor_markers <- FindAllMarkers(
+  invasive_obj, 
+  only.pos = TRUE, 
+  min.pct = 0.25, 
+  logfc.threshold = 0.25
+)
+
+# View top 5 markers per cluster
+top5_markers <- tumor_markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 5, order_by = avg_log2FC)
+
+print(top5_markers)
+```
+
+```{r}
+library(clusterProfiler)
+library(org.Hs.eg.db) # Use org.Mm.eg.db for mouse
+library(enrichplot)
+
+# 1. Get all genes and their logFC for every cluster 
+# Set thresholds to 0 to get a complete list for GSEA ranking
+all_genes_markers <- FindAllMarkers(
+  invasive_obj, 
+  only.pos = FALSE, 
+  min.pct = 0, 
+  logfc.threshold = 0, 
+  verbose = TRUE
+)
+
+# 2. Prepare a list of ranked gene vectors for compareCluster
+# We rank by avg_log2FC (or a combined score of -log10(p_val) * log2FC)
+gene_list_clusters <- all_genes_markers %>%
+  split(.$cluster) %>%
+  map(~ {
+    # Create the ranked vector
+    rank_vec <- .x$avg_log2FC
+    names(rank_vec) <- .x$gene
+    sort(rank_vec, decreasing = TRUE)
+  })
+```
+
+```{r}
+# 3. Run GSEA using GO (Biological Process)
+# Note: 'gseGO' is a wrapper that handles the GSEA algorithm
+ck <- compareCluster(
+  geneClusters = gene_list_clusters, 
+  fun = "gseGO", 
+  ont = "BP", 
+  OrgDb = org.Hs.eg.db, 
+  keyType = "SYMBOL",
+  pvalueCutoff = 0.05
+)
+
+# 4. Simplify to remove redundant GO terms
+ck_simple <- simplify(ck)
+```
+
+```{r}
+# Visualise the top 3 pathways per cluster
+dotplot(ck, showCategory = 4) + 
+  scale_color_viridis_c(guide = guide_colorbar(reverse = TRUE)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "GSEA Biological Processes by Cluster")
+```
+
+test
