@@ -66,19 +66,13 @@ wts_obj_invasive <- subset(wts_obj, subset = Annotation %in% "Invasive_Tumor")
 
 # 3. Normalise (log + CPM)
 ```{r}
-# 1. Extract raw counts
-raw_counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
+counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
 
-# 2. Calculate library size (total counts per cell)
-lib_size <- colSums(raw_counts)
+cpm_counts <- t(t(counts) / colSums(counts)) * 1e6
 
-# 3. Normalise to CPM (Counts Per Million)
-cpm_counts <- t(t(raw_counts) / lib_size) * 1e6
-
-# 4. Log transform: log(CPM + 1)
 log_cpm_counts <- log1p(cpm_counts)
 
-# 5. Place back into the 'data' layer
+# Replace into data layer
 wts_obj_invasive <- SetAssayData(
   object = wts_obj_invasive, 
   layer = "data", 
@@ -193,8 +187,8 @@ hist(wts_obj_invasive$nCount_RNA, breaks = 200)
 ```{r}
 plot_data <- wts_obj_invasive@meta.data
 p_bias_check <- plot_data %>%
-  filter(!is.na(predicted_surface_class)) %>%
-  ggplot(aes(x = predicted_surface_class, y = nCount_RNA, fill = predicted_surface_class)) +
+  filter(!is.na(microenv_prediction)) %>%
+  ggplot(aes(x = microenv_prediction, y = nCount_RNA, fill = microenv_prediction)) +
   
   # Violin for distribution shape
   geom_violin(trim = FALSE, alpha = 0.6, scale = "width") +
@@ -220,16 +214,16 @@ p_bias_check
 
 ```{r}
 # Create stacked barplot of predictions by depth
-barplot(table(wts_obj_invasive$predicted_surface_class, cut(wts_obj_invasive$nCount_RNA, 200)),
+barplot(table(wts_obj_invasive$microenv_prediction, cut(wts_obj_invasive$nCount_RNA, 200)),
         legend = TRUE, 
         las = 2, 
         main = "Predictions by Depth")
 ```
 
 ```{r}
-barplot(prop.table(table(wts_obj_invasive$predicted_surface_class, cut(wts_obj_invasive$nCount_RNA, 200)), 2),
+barplot(prop.table(table(wts_obj_invasive$microenv_prediction, cut(wts_obj_invasive$nCount_RNA, 200)), 2),
         legend = TRUE, 
         las = 2, 
         main = "Proportion of Predictions by Depth")
 ```
-test
+

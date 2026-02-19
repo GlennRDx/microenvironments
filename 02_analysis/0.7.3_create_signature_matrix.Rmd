@@ -1,0 +1,97 @@
+---
+title: "0.7.3_create_sig_matrix_input"
+output: html_document
+---
+
+# Load packages
+```{r setup, include=FALSE}
+library(Seurat)
+library(dplyr)
+library(data.table)
+library(Matrix)
+
+# Paths (Adjust as needed)
+data_dir <- "/Users/glero527/Documents/microenvironments/01_data/janesick_2023/processed/"
+output_dir <- file.path(data_dir, "CIBERSORTx_Inputs")
+if(!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+```
+
+# Load data
+```{r}
+# smj_obj <- wts_obj
+```
+
+# DE Analysis to find marker genes
+```{r}
+# identities
+Idents(sm_obj) <- "CIBERSORTx_Labels"
+
+# de analysis to find marker genes of each cell type
+all_markers <- FindAllMarkers(
+  sm_obj,
+  slot = "counts",           # Use raw counts
+  only.pos = TRUE,           # Signature genes should be upregulated
+  min.pct = 0.10,            # Gene must be in 10% of cells in the cluster
+  logfc.threshold = 0.25,    # Minimum fold change
+  test.use = "wilcox"        # Standard non-parametric test
+)
+
+# Select marker Genes (300 to 500 per phenotype) rank by FC filter by p-val_adj
+sig_gene_list <- all_markers %>%
+  filter(p_val_adj < 0.05) %>%
+  group_by(cluster) %>%
+  # Take the top 500 genes by Log2 Fold Change
+  slice_max(order_by = avg_log2FC, n = 500) %>%
+  # filter(n() >= 300) %>% # Filter out clusters that didn't meet the minimum 300 gene requirement
+  ungroup()
+
+# Get the unique list of all marker genes
+marker_genes <- unique(sig_gene_list$gene)
+```
+```{r}
+View(dge_results_negbinom)
+surf_core_markers <- dge_results_negbinom[dge_results_negbinom$result != "Other",]
+View(surf_core_markers)
+length(t(surf_core_markers))
+surf_core_abs_lfc <- surf_core_markers
+surf_core_abs_lfc$avg_log2FC <- abs(surf_core_markers$avg_log2FC)
+surf_core_abs_lfc <- surf_core_abs_lfc[order(surf_core_abs_lfc$avg_log2FC, decreasing = TRUE),]
+length(rownames(surf_core_abs_lfc[surf_core_abs_lfc$p_val_adj <= 0.01,]))
+surf_core_abs_lfc <- surf_core_abs_lfc[surf_core_abs_lfc$p_val_adj <= 0.01,]
+dim(surf_core_abs_lfc)
+setdiff(rownames(surf_core_abs_lfc), marker_genes)
+
+# add these additional marekr genes to the marker gene list to opefully discern between surface and core
+marker_genes_enhanced <- c(marker_genes, setdiff(rownames(surf_core_abs_lfc), marker_genes))
+```
+
+# Pseudobulk each cell type using the identified marker genes
+```{r}
+# Pseudobulk (avg expr for each cell type)
+counts <- GetAssayData(sm_obj, layer = "counts")
+
+cpm <- t(t(counts) / colSums(counts)) * 1e6
+
+cpm_markers <- cpm[marker_genes_enhanced, ]
+
+cell_types <- sm_obj$CIBERSORTx_Labels
+unique_labels <- unique(cell_types)
+
+signature_matrix <- sapply(unique_labels, function(label) {
+  cells_in_group <- cell_types == label
+  rowMeans(cpm_markers[, cells_in_group])
+})
+
+signature_matrix <- as.data.frame(signature_matrix)
+```
+
+```{r}
+# Export the file
+write.table(
+  signature_matrix, 
+  file = file.path(output_dir, "sigmat_nn_marker_genes_enhanced.txt"), 
+  sep = "\t", 
+  quote = FALSE, 
+  col.names = NA
+)
+```

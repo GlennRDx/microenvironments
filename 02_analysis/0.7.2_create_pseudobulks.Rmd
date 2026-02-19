@@ -1,0 +1,115 @@
+---
+title: "0.7.2_pseudobulk_datasets"
+output: html_document
+---
+```{r}
+# 1. Setup and Load Data
+library(Seurat)
+library(dplyr)
+library(Matrix)
+# Load your object with predictions
+wts_obj <- readRDS("/Users/glero527/Documents/microenvironments/01_data/janesick_2023/processed/wts_obj_processed_predicted.RDS")
+
+output_dir <- "/Users/glero527/Documents/microenvironments/01_data/janesick_2023/processed/pseudobulk_files/"
+# Create the directory if it doesn't exist
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+Idents(wts_obj) <- "microenv_prediction"
+```
+
+```{r}
+wts_obj$CIBERSORTx_Labels <- case_when(
+  wts_obj$Annotation == "Invasive_Tumor" & wts_obj$microenv_prediction == "Surface" ~ "Invasive_Tumor_Surface",
+  wts_obj$Annotation == "Invasive_Tumor" & wts_obj$microenv_prediction == "Core" ~ "Invasive_Tumor_Core",
+  wts_obj$Annotation == "Invasive_Tumor" ~ "Invasive_Tumor_Other",
+  TRUE ~ as.character(wts_obj$Annotation) # Keep all other 18 annotations as they are
+)
+print(table(wts_obj$CIBERSORTx_Labels))
+round(prop.table(table(wts_obj$CIBERSORTx_Labels))*100, 2)
+```
+
+
+```{r}
+set.seed(123) # For reproducibility
+
+# 1. The Hold-Out Split
+# split cells into two groups: 50% cells for the sig matrix and 50% for the pseudobulk dataset
+all_cells <- colnames(wts_obj)
+sm_cells <- sample(all_cells, size = floor(0.5 * length(all_cells)))
+pb_cells <- setdiff(all_cells, sm_cells)
+
+# Create seurat object of cells for sig. matrix
+sm_obj <- subset(wts_obj, cells = sm_cells) # use in 0.7.3
+
+# Create sueurat object of cells for pseudobulk
+pb_obj <- subset(wts_obj, cells = pb_cells)
+```
+
+
+
+```{r}
+# Define the Mixture Design
+n_total <- 1000 # Total cells per pseudobulk sample
+background_prop <- 0.30 # 30% noise (the other 19 cell types)
+tumor_prop <- 1 - background_prop # 70% Surface + Core
+
+# Surface vs Core Gradients (90/10, 70/30, 50/50, 30/70, 10/90)
+gradients <- seq(0.9, 0.1, by = -0.2)
+
+# Create a list to store results
+pseudobulk_list <- list()
+ground_truth <- data.frame()
+
+
+
+
+
+# Generate the Samples
+for (i in seq_along(gradients)) {
+  s_weight <- gradients[i]
+  c_weight <- 1 - s_weight
+  
+  sample_name <- paste0("Mix_S", s_weight*100, "_C", c_weight*100)
+  
+  # Calculate cell counts for this sample
+  n_surface <- round(n_total * tumor_prop * s_weight)
+  n_core    <- round(n_total * tumor_prop * c_weight)
+  n_back    <- n_total - (n_surface + n_core)
+  
+  # Get cell IDs for Surface and Core
+  s_ids <- sample(colnames(pb_obj)[pb_obj$CIBERSORTx_Labels == "Invasive_Tumor_Surface"], n_surface)
+  c_ids <- sample(colnames(pb_obj)[pb_obj$CIBERSORTx_Labels == "Invasive_Tumor_Core"], n_core)
+  
+  # Get background cell IDs (from all other 19 cell types)
+  # Sample them according to their natural frequency in the validation set
+  back_pool <- colnames(pb_obj)[!pb_obj$CIBERSORTx_Labels %in% c("Invasive_Tumor_Surface", "Invasive_Tumor_Core")]
+  b_ids <- sample(back_pool, n_back)
+  
+  # Combine and Sum Raw Counts
+  selected_cells <- c(s_ids, c_ids, b_ids)
+  counts <- GetAssayData(pb_obj, layer = "counts")[, selected_cells]
+  pb_counts <- rowSums(counts)
+  
+  # Normalise to CPM (CIBERSORTx likes linear scale)
+  cpm_vector <- (pb_counts / sum(pb_counts)) * 1e6
+  pseudobulk_list[[sample_name]] <- cpm_vector
+  
+  # Record Ground Truth for later comparison
+  actual_props <- table(pb_obj$CIBERSORTx_Labels[match(selected_cells, colnames(pb_obj))]) / n_total
+  temp_truth <- as.data.frame(t(as.matrix(actual_props)))
+  temp_truth$Sample <- sample_name
+  ground_truth <- bind_rows(ground_truth, temp_truth)
+}
+```
+
+
+
+```{r}
+# Export Files
+# Create the Mixture File
+mixture_df <- do.call(cbind, pseudobulk_list)
+mixture_df <- data.frame(Gene = rownames(pb_obj), mixture_df, check.names = FALSE)
+
+write.table(mixture_df, "CIBERSORTx_Mixture_Test.txt", sep="\t", quote=F, row.names=F)
+write.csv(ground_truth, "Ground_Truth_Proportions.csv", row.names=F)
+```

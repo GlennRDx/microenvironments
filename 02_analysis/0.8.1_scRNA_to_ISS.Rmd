@@ -1,0 +1,155 @@
+---
+title: "0.8.1_untitled"
+output: html_document
+---
+# Load Data
+```{r}
+library(Seurat)
+library(MASS)
+
+# Set root directory using the variable from config
+knitr::opts_knit$set(root.dir = data_dir)
+```
+
+```{r}
+obj <- readRDS(file = "/Users/glero527/Documents/microenvironments/01_data/janesick_2023/raw_clean/wts_obj_clean.RDS")
+
+wts_obj <- readRDS("janesick_2023/processed/wts_obj_processed.RDS")
+wts_expr_clean <- fread("janesick_2023/raw/scRNAseq_data_quantile_matched.txt") %>% as.data.frame()
+
+iss_obj_invasive <- readRDS("/Users/glero527/Documents/microenvironments/01_data/janesick_2023/processed/iss_obj_invasive.RDS")
+```
+
+# Replace counts with quantile matched counts
+```{r}
+# 1. clean up quant. matched data
+rownames(wts_expr_clean) <- wts_expr_clean$V1
+wts_expr_clean$V1 <- NULL
+
+# 2. Remove genes which are not shared between ISS and WTS
+wts_obj <- subset(wts_obj, features = shared_genes)
+
+# 3. Reorder/subset the new matrix to match the Seurat object's cells/genes
+wts_expr_clean <- wts_expr_clean[rownames(wts_obj), colnames(wts_obj)]
+
+# 4. covert quantile matched counts to sparse matrix
+counts_matrix_sparse <- as(as.matrix(wts_expr_clean), "dgCMatrix")
+
+# 5. Replace old RAW counts with quantile matched sparse matrix
+wts_obj[["RNA"]] <- SetAssayData(object = wts_obj[["RNA"]], 
+                             layer = "counts", 
+                             new.data = counts_matrix_sparse)
+
+# 6. Filter to invasive tumour cells only
+wts_obj_invasive <- subset(wts_obj, subset = Annotation %in% "Invasive_Tumor")
+```
+
+# Normalise (log + CPM)
+```{r}
+counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
+
+cpm_counts <- t(t(counts) / colSums(counts)) * 1e6
+
+log_cpm_counts <- log1p(cpm_counts)
+
+# Replace into data layer
+wts_obj_invasive <- SetAssayData(
+  object = wts_obj_invasive, 
+  layer = "data", 
+  new.data = log_cpm_counts
+)
+```
+
+# Clustering the reference data (scRNA-seq data)
+```{r}
+obj_invasive <- subset(obj, subset = Annotation == "Invasive_Tumor")
+
+obj_invasive <- NormalizeData(obj_invasive)
+obj_invasive <- FindVariableFeatures(obj_invasive)
+obj_invasive <- ScaleData(obj_invasive)
+obj_invasive <- RunPCA(obj_invasive, verbose = F)
+ElbowPlot(obj_invasive, ndims = 50, reduction = 'pca')
+```
+
+```{r}
+obj_invasive <-  FindNeighbors(obj_invasive, dims = 1:15)
+obj_invasive <-  FindClusters(obj_invasive, algorithm = 4, resolution = 0.65)
+prop.table(table(obj_invasive$seurat_clusters))
+```
+
+# Transfer cluster labels to quantile matched object
+```{r}
+new_clusters <- Idents(obj_invasive)
+wts_obj_invasive$Leiden_Cluster <- new_clusters[colnames(wts_obj_invasive)]
+```
+
+# Train LDA
+```{r}
+train_matrix <- t(as.matrix(GetAssayData(wts_obj_invasive, layer = "data")))
+train_labels <- wts_obj_invasive$Leiden_Cluster
+```
+
+# Predict on ISS data
+```{r}
+test_matrix <- GetAssayData(iss_obj_invasive, layer = "counts")
+test_matrix <- t(as.matrix(test_matrix))
+
+common_genes <- intersect(colnames(train_matrix), colnames(test_matrix))
+train_matrix <- train_matrix[ , common_genes]
+test_matrix  <- test_matrix[ , common_genes]
+table(colnames(train_matrix) == colnames(test_matrix))
+lda_model <-  lda(x = train_matrix, grouping = train_labels)
+```
+
+```{r}
+prediction <- predict(lda_model, newdata = test_matrix)
+```
+
+# Assign labels to ISS object
+```{r}
+iss_obj_invasive$Predicted_Cluster <-  prediction$class
+iss_obj_invasive$Prediction_Confidence <- apply(prediction$posterior, 1, max)
+```
+
+# Visualise with plot
+```{r}
+cluster_fig_dir <- file.path("/Users/glero527/Documents/microenvironments/03_figures/0.8.1/individual_cluster_plots")
+dir.create(cluster_fig_dir, showWarnings = FALSE)
+
+plot_data <- iss_obj_invasive@meta.data
+unique_clusters <- unique(plot_data$Predicted_Cluster)
+
+# 2. Loop through each cluster to generate and save plots
+# We use the 'clusters' and 'turbo_cols' defined in your previous chunk
+for (current_cluster in unique_clusters) {
+  
+  # Create the plot
+  p_temp <- ggplot() +
+    # Layer 1: Background - All OTHER Invasive cells (Grey)
+    # Logic: Must have a cluster (be invasive), but NOT be the current cluster
+    geom_point(data = subset(plot_data, !is.na(Predicted_Cluster) & Predicted_Cluster != current_cluster), 
+               aes(x = y_centroid, y = x_centroid), 
+               color = "grey85", 
+               size = 0.01) +
+    
+    # Layer 2: Foreground - The CURRENT Cluster (Specific Color)
+    geom_point(data = subset(plot_data, 
+                             Predicted_Cluster == current_cluster & 
+                             Prediction_Confidence > 0.8), 
+               aes(x = y_centroid, y = x_centroid), 
+               color = "black", 
+               size = 0.01) +
+    
+    # Formatting matching your previous styles
+    coord_fixed(ylim = c(3850, 0)) +
+    theme_minimal() +
+    theme(legend.position = "none") + # Remove legend as title explains the plot
+    ggtitle(paste("Invasive Tumor Cluster:", current_cluster))
+  
+  # Construct filename
+  file_name <- paste0("cluster_", current_cluster, "_spatial_map.png")
+  
+  # Save the plot
+  ggsave(filename = file.path(cluster_fig_dir, file_name), plot = p_temp, width = 7.87*1.25, height = 6.5*1.25, dpi = 300)
+}
+```

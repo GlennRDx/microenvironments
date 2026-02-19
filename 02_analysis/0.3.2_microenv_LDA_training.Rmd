@@ -51,8 +51,7 @@ saveRDS(train_genes, file = "janesick_2023/processed/train_genes.RDS")
 ```{r}
 # Manual Log Transformation
 raw_counts <- GetAssayData(iss_obj_invasive, assay = "RNA", layer = "counts")
-cpm <-t(t(raw_counts) / colSums(raw_counts)) * 1e6
-log_transformed_counts <- log1p(cpm)
+log_transformed_counts <- log1p(raw_counts)
 
 iss_obj_invasive <- SetAssayData(iss_obj_invasive, layer = "data", new.data = log_transformed_counts)
 ```
@@ -204,4 +203,3 @@ fit_lda_final <- lda(
 # Save
 saveRDS(fit_lda_final, file = "janesick_2023/processed/fit_lda.RDS")
 ```
-test

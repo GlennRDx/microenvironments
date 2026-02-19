@@ -489,4 +489,3 @@ surface <- subset(iss_obj_invasive, subset = surface_class_radius == "Surface")
 mean(core$nCount_RNA)
 mean(surface$nCount_RNA)
 ```
-test

@@ -42,7 +42,7 @@ val_genes <- setdiff(shared_genes, train_genes)
 1. min.pct (filters out genes that are expressed in fewer than a specific percentage of cells in both groups) was set to 0: Can lead to significant p-values for genes that are only expressed in 1 or 2 cells: not v useful as "markers" for a whole population.
 
 2. logfc.threshold (filters out genes that do not meet a minimum average fold-change difference between groups) was set to 0: Lead to p-value inflation, where tiny, biologically meaningless differences become statistically significant due to the large number of cells
-```{r}
+```{r, warning = FALSE}
 # DGE Analysis
 # 1. scRNA-seq (WTD) Analysis
 Idents(scRNA_invasive) <- scRNA_invasive$microenv_lda_val
@@ -295,4 +295,3 @@ p_val_sc    <- make_clean_plot(plot_data_validation, "scRNA_surface", "scRNA_cor
 # Combine with Patchwork
 (p_train_iss + p_train_sc) / (p_val_iss + p_val_sc)
 ```
-test
