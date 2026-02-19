@@ -14,50 +14,47 @@ knitr::opts_knit$set(root.dir = data_dir)
 ```{r}
 obj <- readRDS(file = "/Users/glero527/Documents/microenvironments/01_data/janesick_2023/raw_clean/wts_obj_clean.RDS")
 
-wts_obj <- readRDS("janesick_2023/processed/wts_obj_processed.RDS")
-wts_expr_clean <- fread("janesick_2023/raw/scRNAseq_data_quantile_matched.txt") %>% as.data.frame()
+qm_counts <- fread("janesick_2023/raw/scRNAseq_data_quantile_matched.txt") %>% as.data.frame()
+rownames(qm_counts) <- qm_counts$V1
+qm_counts$V1 <- NULL
 
 iss_obj_invasive <- readRDS("/Users/glero527/Documents/microenvironments/01_data/janesick_2023/processed/iss_obj_invasive.RDS")
 ```
 
 # Replace counts with quantile matched counts
 ```{r}
-# 1. clean up quant. matched data
-rownames(wts_expr_clean) <- wts_expr_clean$V1
-wts_expr_clean$V1 <- NULL
-
-# 2. Remove genes which are not shared between ISS and WTS
-wts_obj <- subset(wts_obj, features = shared_genes)
-
-# 3. Reorder/subset the new matrix to match the Seurat object's cells/genes
-wts_expr_clean <- wts_expr_clean[rownames(wts_obj), colnames(wts_obj)]
-
-# 4. covert quantile matched counts to sparse matrix
-counts_matrix_sparse <- as(as.matrix(wts_expr_clean), "dgCMatrix")
-
-# 5. Replace old RAW counts with quantile matched sparse matrix
-wts_obj[["RNA"]] <- SetAssayData(object = wts_obj[["RNA"]], 
-                             layer = "counts", 
-                             new.data = counts_matrix_sparse)
-
-# 6. Filter to invasive tumour cells only
-wts_obj_invasive <- subset(wts_obj, subset = Annotation %in% "Invasive_Tumor")
+# # Remove genes which are not shared between ISS and WTS
+# wts_obj <- subset(wts_obj, features = shared_genes)
+# 
+# # Reorder/subset the new matrix to match the Seurat object's cells/genes
+# wts_expr_clean <- wts_expr_clean[rownames(wts_obj), colnames(wts_obj)]
+# 
+# # covert quantile matched counts to sparse matrix
+# counts_matrix_sparse <- as(as.matrix(wts_expr_clean), "dgCMatrix")
+# 
+# # Replace old RAW counts with quantile matched sparse matrix
+# wts_obj[["RNA"]] <- SetAssayData(object = wts_obj[["RNA"]], 
+#                              layer = "counts", 
+#                              new.data = counts_matrix_sparse)
+# 
+# # Filter to invasive tumour cells only
+# wts_obj_invasive <- subset(wts_obj, subset = Annotation %in% "Invasive_Tumor")
 ```
 
 # Normalise (log + CPM)
 ```{r}
-counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
-
-cpm_counts <- t(t(counts) / colSums(counts)) * 1e6
-
-log_cpm_counts <- log1p(cpm_counts)
-
-# Replace into data layer
-wts_obj_invasive <- SetAssayData(
-  object = wts_obj_invasive, 
-  layer = "data", 
-  new.data = log_cpm_counts
-)
+# counts <- GetAssayData(wts_obj_invasive, assay = "RNA", layer = "counts")
+# 
+# cpm_counts <- t(t(counts) / colSums(counts)) * 1e6
+# 
+# log_cpm_counts <- log1p(cpm_counts)
+# 
+# # Replace into data layer
+# wts_obj_invasive <- SetAssayData(
+#   object = wts_obj_invasive, 
+#   layer = "data", 
+#   new.data = log_cpm_counts
+# )
 ```
 
 # Clustering the reference data (scRNA-seq data)
